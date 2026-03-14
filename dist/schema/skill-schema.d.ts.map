@@ -1,0 +1,1 @@
+{"version":3,"file":"skill-schema.d.ts","sourceRoot":"","sources":["../../src/schema/skill-schema.ts"],"names":[],"mappings":"AA0IA,MAAM,WAAW,gBAAgB;IAC/B,KAAK,EAAE,OAAO,CAAC;IACf,MAAM,EAAE,MAAM,EAAE,CAAC;CAClB;AAED,wBAAgB,qBAAqB,CAAC,IAAI,EAAE,OAAO,GAAG,gBAAgB,CAUrE"}

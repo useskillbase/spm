@@ -1,0 +1,62 @@
+{
+  "name": "@skillbase/spm",
+  "version": "0.1.1",
+  "description": "Package manager for AI skills — discover, install, and publish reusable prompts and tools",
+  "type": "module",
+  "repository": "https://github.com/skillbase/spm",
+  "keywords": [
+    "ai",
+    "skills",
+    "package-manager",
+    "mcp",
+    "prompts",
+    "cli",
+    "llm",
+    "ai-tools",
+    "model-context-protocol",
+    "prompt-management"
+  ],
+  "author": "Skillbase <contact@skillbase.space>",
+  "homepage": "https://skillbase.space",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "bin": {
+    "spm": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "reindex": "node --loader ts-node/esm src/scripts/reindex.ts",
+    "start": "node dist/cli/index.js",
+    "spm": "node dist/cli/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1007.0",
+    "@aws-sdk/s3-request-presigner": "^3.1007.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@octokit/rest": "^22.0.1",
+    "ajv": "^8.18.0",
+    "commander": "^14.0.3",
+    "semver": "^7.7.4",
+    "tar-stream": "^3.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "@types/semver": "^7.7.1",
+    "@types/tar-stream": "^3.1.4",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
