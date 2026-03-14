@@ -2,8 +2,13 @@ import fs from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { parse, modify, applyEdits, type ModificationOptions } from "jsonc-parser";
 
 const MCP_SERVER_KEY = "spm";
+
+const JSONC_MODIFY_OPTIONS: ModificationOptions = {
+  formattingOptions: { tabSize: 2, insertSpaces: true },
+};
 
 interface ClientConfig {
   name: string;
@@ -47,18 +52,18 @@ function getSkillsBin(): string {
   return "spm";
 }
 
-async function readJsonFile(filePath: string): Promise<Record<string, unknown>> {
+async function readRawConfig(filePath: string): Promise<string> {
   try {
-    const raw = await fs.readFile(filePath, "utf-8");
-    return JSON.parse(raw) as Record<string, unknown>;
+    return await fs.readFile(filePath, "utf-8");
   } catch {
-    return {};
+    return "{}";
   }
 }
 
-async function writeJsonFile(filePath: string, data: Record<string, unknown>): Promise<void> {
+async function writeRawConfig(filePath: string, content: string): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2) + "\n", "utf-8");
+  const normalized = content.endsWith("\n") ? content : content + "\n";
+  await fs.writeFile(filePath, normalized, "utf-8");
 }
 
 export async function connectCommand(
@@ -72,8 +77,9 @@ export async function connectCommand(
     process.exit(1);
   }
 
-  const data = await readJsonFile(config.configPath);
-  const section = (data[config.serverSection] ?? {}) as Record<string, unknown>;
+  let content = await readRawConfig(config.configPath);
+  const data = parse(content) as Record<string, Record<string, unknown>>;
+  const section = data[config.serverSection] ?? {};
 
   if (section[MCP_SERVER_KEY]) {
     console.log(`Already connected to ${config.name}.`);
@@ -81,13 +87,20 @@ export async function connectCommand(
     return;
   }
 
-  section[MCP_SERVER_KEY] = {
+  const serverValue = {
     command: process.execPath,
     args: [getSkillsBin(), "serve"],
   };
-  data[config.serverSection] = section;
 
-  await writeJsonFile(config.configPath, data);
+  const edits = modify(
+    content,
+    [config.serverSection, MCP_SERVER_KEY],
+    serverValue,
+    JSONC_MODIFY_OPTIONS,
+  );
+  content = applyEdits(content, edits);
+
+  await writeRawConfig(config.configPath, content);
 
   console.log(`Connected to ${config.name}.`);
   console.log(`  Config: ${config.configPath}`);
@@ -105,18 +118,24 @@ export async function disconnectCommand(
     process.exit(1);
   }
 
-  const data = await readJsonFile(config.configPath);
-  const section = (data[config.serverSection] ?? {}) as Record<string, unknown>;
+  let content = await readRawConfig(config.configPath);
+  const data = parse(content) as Record<string, Record<string, unknown>>;
+  const section = data[config.serverSection] ?? {};
 
   if (!section[MCP_SERVER_KEY]) {
     console.log(`Not connected to ${config.name}.`);
     return;
   }
 
-  delete section[MCP_SERVER_KEY];
-  data[config.serverSection] = section;
+  const edits = modify(
+    content,
+    [config.serverSection, MCP_SERVER_KEY],
+    undefined, // undefined = remove the key
+    JSONC_MODIFY_OPTIONS,
+  );
+  content = applyEdits(content, edits);
 
-  await writeJsonFile(config.configPath, data);
+  await writeRawConfig(config.configPath, content);
 
   console.log(`Disconnected from ${config.name}.`);
   console.log(`  Config: ${config.configPath}`);

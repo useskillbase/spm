@@ -37,6 +37,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "version": "bash scripts/release-changelog.sh",
     "prepublishOnly": "npm run build && npm test"
   },
   "engines": {
@@ -50,6 +51,7 @@
     "@skillbase/spm": "^0.1.1",
     "ajv": "^8.18.0",
     "commander": "^14.0.3",
+    "jsonc-parser": "^3.3.1",
     "semver": "^7.7.4",
     "tar-stream": "^3.1.8"
   },
