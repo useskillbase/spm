@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-14
+
 ### Added
 
 - **Persona system** — `.person.json` format for defining AI agent personalities with character traits (role, tone, guidelines, instructions), model settings, and skill dependencies
