@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import { Command } from "commander";
+
+const require = createRequire(import.meta.url);
+const pkg = require("../../package.json") as { version: string };
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServer } from "../mcp/server.js";
 import { initCommand } from "./commands/init.js";
@@ -31,7 +35,7 @@ const program = new Command();
 program
   .name("spm")
   .description("Skillbase — AI skill manager")
-  .version("0.10.0");
+  .version(pkg.version);
 
 program
   .command("init")

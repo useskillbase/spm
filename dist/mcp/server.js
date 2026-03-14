@@ -4,7 +4,7 @@ import { getSkillIndex, findSkill } from "../core/registry.js";
 import { loadSkill } from "../core/loader.js";
 import { readConfig } from "../core/config.js";
 import { addFeedback, getStatsForSkill } from "../core/feedback.js";
-import { createRegistryClients, getClientForSkill } from "../core/registry-client.js";
+import { createRegistryClients, getClientForSkill, } from "../core/registry-client.js";
 export async function createServer() {
     const config = await readConfig();
     const server = new McpServer({
@@ -15,7 +15,7 @@ export async function createServer() {
             tools: {},
         },
         instructions: [
-            "SkillBase — AI skill manager. Use skill_list to discover available skills,",
+            "Skillbase — AI skill manager. Use skill_list to discover available skills,",
             "then skill_load to load a skill's instructions into context.",
             "Use skill_search to find skills by keyword, tag, or file pattern.",
             "Use skill_context to check which skills are already loaded and token budget.",
@@ -63,7 +63,9 @@ function registerSkillList(server) {
             tokens_estimate: s.tokens_estimate,
         }));
         return {
-            content: [{ type: "text", text: JSON.stringify({ skills }, null, 2) }],
+            content: [
+                { type: "text", text: JSON.stringify({ skills }, null, 2) },
+            ],
         };
     });
 }
@@ -154,7 +156,9 @@ function registerSkillContext(server, loadedSkills) {
 }
 function registerSkillSearch(server, config) {
     server.tool("skill_search", "Search for skills by query. Matches against skill names, tags, trigger descriptions, and file patterns. Use scope='remote' to search remote registries, scope='all' for both local and remote. Returns confidence score when available.", {
-        query: z.string().describe("Search query (keyword, tag, or file pattern like '*.docx')"),
+        query: z
+            .string()
+            .describe("Search query (keyword, tag, or file pattern like '*.docx')"),
         scope: z
             .enum(["local", "remote", "all"])
             .optional()
@@ -180,7 +184,9 @@ function registerSkillSearch(server, config) {
                     score += 6;
                 return { skill, score };
             });
-            const matches = scored.filter((s) => s.score > 0).sort((a, b) => b.score - a.score);
+            const matches = scored
+                .filter((s) => s.score > 0)
+                .sort((a, b) => b.score - a.score);
             results.local = await Promise.all(matches.map(async (s) => {
                 const stats = await getStatsForSkill(s.skill.name);
                 return {
@@ -194,7 +200,8 @@ function registerSkillSearch(server, config) {
             }));
         }
         // Remote search
-        if ((scope === "remote" || scope === "all") && config.search.remote_enabled) {
+        if ((scope === "remote" || scope === "all") &&
+            config.search.remote_enabled) {
             const clients = createRegistryClients(config);
             const remoteResults = [];
             for (const [registryName, client] of clients) {
@@ -271,7 +278,9 @@ function registerSkillFeedback(server) {
 }
 function registerSkillInstall(server, config) {
     server.tool("skill_install", "Installs a skill from a remote registry. REQUIRES user confirmation before calling. Suggest the skill to the user first, then call this only after they approve. Pass the skill reference as 'author/name' (e.g. 'community/code-reviewer').", {
-        name: z.string().describe("Skill reference to install, e.g. 'community/code-reviewer'"),
+        name: z
+            .string()
+            .describe("Skill reference to install, e.g. 'community/code-reviewer'"),
         version: z
             .string()
             .optional()
@@ -294,7 +303,12 @@ function registerSkillInstall(server, config) {
             const slashIdx = name.indexOf("/");
             if (slashIdx === -1) {
                 return {
-                    content: [{ type: "text", text: `Invalid skill reference: ${name}. Expected author/name.` }],
+                    content: [
+                        {
+                            type: "text",
+                            text: `Invalid skill reference: ${name}. Expected author/name.`,
+                        },
+                    ],
                     isError: true,
                 };
             }

@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import { Command } from "commander";
+const require = createRequire(import.meta.url);
+const pkg = require("../../package.json");
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServer } from "../mcp/server.js";
 import { initCommand } from "./commands/init.js";
@@ -19,12 +22,12 @@ import { updateCommand } from "./commands/update.js";
 import { convertCommand } from "./commands/convert.js";
 import { connectCommand, disconnectCommand } from "./commands/connect.js";
 import { writeIndex } from "../core/indexer.js";
-import { getGlobalSkillsDir, getProjectSkillsDir, getInstalledDir } from "../core/paths.js";
+import { getGlobalSkillsDir, getProjectSkillsDir, getInstalledDir, } from "../core/paths.js";
 const program = new Command();
 program
     .name("spm")
-    .description("SkillBase — AI skill manager")
-    .version("0.10.0");
+    .description("Skillbase — AI skill manager")
+    .version(pkg.version);
 program
     .command("init")
     .description("Initialize skills directory")
