@@ -4,6 +4,10 @@
 
 ## [0.2.1] - 2026-03-14
 
+### Fixed
+
+- **`spm <command> --help` stack overflow** — custom `formatHelp` called itself recursively for commands without subcommands; now falls back to the original `Help.prototype.formatHelp`
+
 ## [0.2.0] - 2026-03-14
 
 ### Added

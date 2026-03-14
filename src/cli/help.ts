@@ -1,6 +1,8 @@
-import type { Command, Help } from "commander";
+import { Command, Help } from "commander";
 import { theme } from "./theme.js";
 import { GROUPS, type GroupKey } from "./command.js";
+
+const defaultFormatHelp = Help.prototype.formatHelp;
 
 export function configureHelp(program: Command): void {
   program.configureHelp({
@@ -20,7 +22,7 @@ export function configureHelp(program: Command): void {
       // Group subcommands
       const subs = cmd.commands;
       if (subs.length === 0) {
-        return helper.formatHelp(cmd, helper);
+        return defaultFormatHelp.call(helper, cmd, helper);
       }
 
       const grouped = new Map<string, Array<{ name: string; description: string }>>();
