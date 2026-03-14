@@ -1,11 +1,21 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { SkillManifest } from "../../types/index.js";
+import { log, note, exitError } from "../ui.js";
+import type { CommandDef } from "../command.js";
 
-function buildManifest(name: string, scope: string): SkillManifest {
+export const command: CommandDef = {
+  name: "create",
+  description: "Create a new skill scaffold",
+  group: "system",
+  args: [{ name: "name", required: true }],
+  handler: createCommand,
+};
+
+function buildManifest(name: string): SkillManifest {
   return {
     schema_version: 1,
-    name: `@${scope}/${name}`,
+    name,
     version: "1.0.0",
     language: "en",
     description: `TODO: describe what ${name} does`,
@@ -81,21 +91,19 @@ Before completing, verify:
 </verification>
 `;
 
-export async function createCommand(name: string, options: { scope?: string }): Promise<void> {
-  const scope = options.scope ?? "user";
+export async function createCommand(name: string): Promise<void> {
   const dir = path.resolve(name);
 
   try {
     await fs.access(dir);
-    console.error(`Error: directory "${name}" already exists.`);
-    process.exit(1);
+    exitError(`Directory "${name}" already exists.`);
   } catch {
     // Directory doesn't exist — good
   }
 
   await fs.mkdir(dir, { recursive: true });
 
-  const manifest = buildManifest(name, scope);
+  const manifest = buildManifest(name);
   await fs.writeFile(
     path.join(dir, "skill.json"),
     JSON.stringify(manifest, null, 2),
@@ -108,12 +116,9 @@ export async function createCommand(name: string, options: { scope?: string }): 
     "utf-8",
   );
 
-  console.log(`Created skill scaffold: ${dir}/`);
-  console.log(`  skill.json — manifest (edit name, trigger, permissions)`);
-  console.log(`  SKILL.md   — instructions for the model`);
-  console.log(`\nNext steps:`);
-  console.log(`  1. Edit skill.json — set description, trigger, tags`);
-  console.log(`  2. Edit SKILL.md — write model instructions`);
-  console.log(`  3. skills validate ./${name}`);
-  console.log(`  4. skills install ./${name}`);
+  log.success(`Created skill scaffold: ${dir}/`);
+  note(
+    `skill.json — manifest (edit name, trigger, permissions)\nSKILL.md   — instructions for the model\n\nNext steps:\n  1. Edit skill.json — set author, description, trigger, tags\n  2. Edit SKILL.md — write model instructions\n  3. spm validate ./${name}\n  4. spm link ./${name}`,
+    "Scaffold contents",
+  );
 }

@@ -1,22 +1,32 @@
 import { getSkillIndex, findSkill } from "../../core/registry.js";
 import { addFeedback } from "../../core/feedback.js";
+import { log, exitError } from "../ui.js";
+export const command = {
+    name: "rate",
+    description: "Rate a skill (1-5)",
+    group: "registry",
+    args: [{ name: "name", required: true }],
+    options: [
+        { flags: "--score <score>", description: "Rating from 1 to 5", required: true },
+        { flags: "--comment <comment>", description: "Optional comment" },
+    ],
+    handler: rateCommand,
+};
 export async function rateCommand(name, options) {
     const score = Number(options.score);
     if (!Number.isInteger(score) || score < 1 || score > 5) {
-        console.error("Score must be an integer from 1 to 5.");
-        process.exit(1);
+        exitError("Score must be an integer from 1 to 5.");
     }
     const index = await getSkillIndex();
     const entry = findSkill(index, name);
     if (!entry) {
-        console.error(`Skill "${name}" not found. Use "spm list" to see installed skills.`);
-        process.exit(1);
+        exitError(`Skill "${name}" not found. Use "spm list" to see installed skills.`);
     }
     const result = score >= 4 ? "success" : score >= 3 ? "partial" : "failure";
     await addFeedback(name, entry.v, result, "explicit", {
         rating: score,
         comment: options.comment ?? undefined,
     });
-    console.log(`Recorded rating ${score}/5 for ${name}@${entry.v} (${result})`);
+    log.success(`Recorded rating ${score}/5 for ${name}@${entry.v} (${result})`);
 }
 //# sourceMappingURL=rate.js.map

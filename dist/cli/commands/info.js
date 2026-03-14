@@ -1,12 +1,19 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getSkillIndex, findSkill } from "../../core/registry.js";
+import { note, exitError } from "../ui.js";
+export const command = {
+    name: "info",
+    description: "Show detailed information about a skill",
+    group: "review",
+    args: [{ name: "name", required: true }],
+    handler: infoCommand,
+};
 export async function infoCommand(name) {
     const index = await getSkillIndex();
     const entry = findSkill(index, name);
     if (!entry) {
-        console.error(`Skill "${name}" not found. Use "spm list" to see installed skills.`);
-        process.exit(1);
+        exitError(`Skill "${name}" not found. Use "spm list" to see installed skills.`);
     }
     // Read full manifest
     const skillDir = path.dirname(entry.entry);
@@ -19,33 +26,33 @@ export async function infoCommand(name) {
     catch {
         // Continue with index data only
     }
-    console.log(`${entry.name}@${entry.v}`);
-    console.log();
+    const lines = [];
     if (manifest) {
-        console.log(`  description: ${manifest.description}`);
+        lines.push(`description: ${manifest.description}`);
     }
-    console.log(`  trigger:     ${entry.trigger}`);
-    console.log(`  tags:        ${entry.tags.join(", ")}`);
-    console.log(`  priority:    ${entry.priority}`);
-    console.log(`  tokens:      ~${entry.tokens_estimate}`);
-    console.log(`  entry:       ${entry.entry}`);
+    lines.push(`trigger:     ${entry.trigger}`);
+    lines.push(`tags:        ${entry.tags.join(", ")}`);
+    lines.push(`priority:    ${entry.priority}`);
+    lines.push(`tokens:      ~${entry.tokens_estimate}`);
+    lines.push(`entry:       ${entry.entry}`);
     if (entry.file_patterns) {
-        console.log(`  patterns:    ${entry.file_patterns.join(", ")}`);
+        lines.push(`patterns:    ${entry.file_patterns.join(", ")}`);
     }
     if (manifest) {
-        console.log(`  author:      ${manifest.author}`);
-        console.log(`  license:     ${manifest.license}`);
-        console.log(`  permissions: ${manifest.security?.permissions.length ? manifest.security.permissions.join(", ") : "none"}`);
+        lines.push(`author:      ${manifest.author}`);
+        lines.push(`license:     ${manifest.license}`);
+        lines.push(`permissions: ${manifest.security?.permissions.length ? manifest.security.permissions.join(", ") : "none"}`);
         if (manifest.works_with && manifest.works_with.length > 0) {
-            console.log(`  works_with:`);
+            lines.push(`works_with:`);
             for (const w of manifest.works_with) {
-                console.log(`    - ${w.skill} (${w.relationship}): ${w.description}`);
+                lines.push(`  - ${w.skill} (${w.relationship}): ${w.description}`);
             }
         }
         const deps = Object.keys(manifest.dependencies);
         if (deps.length > 0) {
-            console.log(`  dependencies: ${deps.join(", ")}`);
+            lines.push(`dependencies: ${deps.join(", ")}`);
         }
     }
+    note(lines.join("\n"), `${entry.name}@${entry.v}`);
 }
 //# sourceMappingURL=info.js.map

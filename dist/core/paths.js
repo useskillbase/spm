@@ -2,6 +2,7 @@ import path from "node:path";
 import os from "node:os";
 const SKILLS_DIR_NAME = ".skills";
 const INSTALLED_DIR = "installed";
+const PERSONAS_DIR = "personas";
 const INDEX_FILE = "index.json";
 const FEEDBACK_FILE = "feedback.json";
 const CONFIG_FILE = "config.json";
@@ -26,5 +27,11 @@ export function getConfigPath(skillsDir) {
 }
 export function getManifestPath(cwd) {
     return path.join(cwd, MANIFEST_FILE);
+}
+export function getPersonasDir(skillsDir) {
+    return path.join(skillsDir, PERSONAS_DIR);
+}
+export function getPersonaPath(skillsDir, name) {
+    return path.join(skillsDir, PERSONAS_DIR, `${name}.person.json`);
 }
 //# sourceMappingURL=paths.js.map

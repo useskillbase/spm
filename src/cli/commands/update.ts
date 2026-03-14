@@ -5,12 +5,20 @@ import { validateSkillManifest } from "../../schema/skill-schema.js";
 import { RegistryClient } from "../../core/registry-client.js";
 import { packSkill } from "../../core/storage/index.js";
 import type { SkillManifest } from "../../types/index.js";
+import { log, spinner, note, exitError, formatSize } from "../ui.js";
+import type { CommandDef } from "../command.js";
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+export const command: CommandDef = {
+  name: "update",
+  description: "Update an existing skill in the registry (re-publish)",
+  group: "registry",
+  args: [{ name: "source", required: true }],
+  options: [
+    { flags: "--registry <name>", description: "Target registry" },
+    { flags: "--dry-run", description: "Show what would happen without executing" },
+  ],
+  handler: updateCommand,
+};
 
 export async function updateCommand(
   source: string,
@@ -23,19 +31,16 @@ export async function updateCommand(
     registryName = config.scopes["*"];
   }
   if (!registryName) {
-    console.error("Error: no default registry configured. Use 'skills login <url>' first.");
-    process.exit(1);
+    exitError("No default registry configured. Use 'skills login <url>' first.");
   }
 
   const reg = config.registries.find((r) => r.name === registryName);
   if (!reg) {
-    console.error(`Error: registry "${registryName}" not found in config.`);
-    process.exit(1);
+    exitError(`Registry "${registryName}" not found in config.`);
   }
 
   if (!reg.token) {
-    console.error(`Error: no token for registry "${registryName}". Use 'skills login' first.`);
-    process.exit(1);
+    exitError(`No token for registry "${registryName}". Use 'skills login' first.`);
   }
 
   const client = new RegistryClient(reg.url, reg.token);
@@ -50,17 +55,12 @@ export async function updateCommand(
     const data = JSON.parse(raw) as unknown;
     const validation = validateSkillManifest(data);
     if (!validation.valid) {
-      console.error("Invalid skill.json:");
-      for (const error of validation.errors) {
-        console.error(`  - ${error}`);
-      }
-      process.exit(1);
+      exitError(`Invalid skill.json:\n${validation.errors.map((e) => `  - ${e}`).join("\n")}`);
     }
     manifest = data as SkillManifest;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      console.error(`Error: cannot read skill.json in "${source}".`);
-      process.exit(1);
+      exitError(`Cannot read skill.json in "${source}".`);
     }
     throw err;
   }
@@ -68,15 +68,13 @@ export async function updateCommand(
   // Verify skill exists in registry
   const existing = await client.getSkill(manifest.author, manifest.name);
   if (!existing) {
-    console.error(`Error: "${manifest.author}/${manifest.name}" not found in registry. Use 'skills publish' for first-time publishing.`);
-    process.exit(1);
+    exitError(`"${manifest.author}/${manifest.name}" not found in registry. Use 'skills publish' for first-time publishing.`);
   }
 
   const previousVersion = existing.version;
 
   if (!manifest.entry) {
-    console.error("Error: skill.json has no 'entry' field. Bundles cannot be updated — only skills with an entry point.");
-    process.exit(1);
+    exitError("skill.json has no 'entry' field. Bundles cannot be updated — only skills with an entry point.");
   }
 
   // Read entry content
@@ -93,25 +91,28 @@ export async function updateCommand(
   }
 
   // Package
-  console.log(`Packaging ${manifest.name}@${manifest.version}...`);
+  const s = spinner();
+  s.start(`Packaging ${manifest.name}@${manifest.version}...`);
   const pkg = await packSkill(skillDir);
 
   if (options.dryRun) {
-    console.log(`[dry-run] Would update ${manifest.name}@${manifest.version} (was ${previousVersion})`);
-    console.log(`  Package size: ${formatSize(pkg.size)} (${pkg.filesCount} files)`);
-    console.log(`  Integrity: ${pkg.integrity}`);
+    s.stop("Done (dry-run)");
+    note(
+      `Would update ${manifest.name}@${manifest.version} (was ${previousVersion})\nPackage size: ${formatSize(pkg.size)} (${pkg.filesCount} files)\nIntegrity: ${pkg.integrity}`,
+      "Dry run",
+    );
     return;
   }
 
   // Publish (server handles update vs insert)
-  console.log(`Updating ${manifest.name} in ${reg.name}...`);
+  s.message(`Updating ${manifest.name} in ${reg.name}...`);
 
   const result = await client.publishWithArchive(
     { manifest, content, compact_content: compactContent },
     pkg.data,
   );
 
-  console.log(`Updated ${result.name}@${result.version} (was ${previousVersion})`);
-  console.log(`  Size: ${formatSize(result.size ?? pkg.size)}`);
-  console.log(`  Tokens: ~${Math.ceil(content.length / 4).toLocaleString()}`);
+  s.stop(`Updated ${result.name}@${result.version} (was ${previousVersion})`);
+  log.info(`Size: ${formatSize(result.size ?? pkg.size)}`);
+  log.info(`Tokens: ~${Math.ceil(content.length / 4).toLocaleString()}`);
 }

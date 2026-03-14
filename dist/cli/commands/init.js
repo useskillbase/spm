@@ -3,6 +3,16 @@ import path from "node:path";
 import { getGlobalSkillsDir, getProjectSkillsDir, getInstalledDir, getManifestPath } from "../../core/paths.js";
 import { getDefaultConfig } from "../../core/config.js";
 import { getDefaultManifest } from "../../core/manifest.js";
+import { log, note } from "../ui.js";
+export const command = {
+    name: "init",
+    description: "Initialize skills directory",
+    group: "system",
+    options: [
+        { flags: "--project", description: "Initialize in current project (.skills/) instead of global (~/.skills/)" },
+    ],
+    handler: initCommand,
+};
 async function createStructure(skillsDir, label) {
     const installedDir = getInstalledDir(skillsDir);
     const configPath = path.join(skillsDir, "config.json");
@@ -24,11 +34,8 @@ async function createStructure(skillsDir, label) {
     catch {
         await fs.writeFile(feedbackPath, JSON.stringify({ entries: [] }, null, 2) + "\n", "utf-8");
     }
-    console.log(`Initialized ${label} skills directory: ${skillsDir}`);
-    console.log(`  installed/   — skill packages`);
-    console.log(`  config.json  — settings`);
-    console.log(`  feedback.json — usage feedback`);
-    console.log(`  cache/       — download cache`);
+    log.success(`Initialized ${label} skills directory: ${skillsDir}`);
+    note(`installed/   — skill packages\nconfig.json  — settings\nfeedback.json — usage feedback\ncache/       — download cache`, "Directory structure");
 }
 export async function initCommand(options) {
     if (options.project) {
@@ -42,7 +49,7 @@ export async function initCommand(options) {
         }
         catch {
             await fs.writeFile(manifestPath, JSON.stringify(getDefaultManifest(), null, 2) + "\n", "utf-8");
-            console.log(`  skill.json   — project dependencies`);
+            log.info("skill.json — project dependencies");
         }
     }
     else {

@@ -3,6 +3,25 @@ import { realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { parse, modify, applyEdits, type ModificationOptions } from "jsonc-parser";
+import { log, exitError } from "../ui.js";
+import type { CommandDef } from "../command.js";
+
+export const commands: CommandDef[] = [
+  {
+    name: "connect",
+    description: "Connect skills to an AI client (claude, zed)",
+    group: "system",
+    args: [{ name: "client", required: true }],
+    handler: connectCommand,
+  },
+  {
+    name: "disconnect",
+    description: "Disconnect skills from an AI client (claude, zed)",
+    group: "system",
+    args: [{ name: "client", required: true }],
+    handler: disconnectCommand,
+  },
+];
 
 const MCP_SERVER_KEY = "spm";
 
@@ -73,8 +92,7 @@ export async function connectCommand(
   const config = clients[client];
 
   if (!config) {
-    console.error(`Unknown client "${client}". Supported: ${Object.keys(clients).join(", ")}`);
-    process.exit(1);
+    exitError(`Unknown client "${client}". Supported: ${Object.keys(clients).join(", ")}`);
   }
 
   let content = await readRawConfig(config.configPath);
@@ -82,8 +100,8 @@ export async function connectCommand(
   const section = data[config.serverSection] ?? {};
 
   if (section[MCP_SERVER_KEY]) {
-    console.log(`Already connected to ${config.name}.`);
-    console.log(`  Config: ${config.configPath}`);
+    log.info(`Already connected to ${config.name}.`);
+    log.message(`Config: ${config.configPath}`);
     return;
   }
 
@@ -102,9 +120,9 @@ export async function connectCommand(
 
   await writeRawConfig(config.configPath, content);
 
-  console.log(`Connected to ${config.name}.`);
-  console.log(`  Config: ${config.configPath}`);
-  console.log(`  Restart ${config.name} to activate.`);
+  log.success(`Connected to ${config.name}.`);
+  log.message(`Config: ${config.configPath}`);
+  log.info(`Restart ${config.name} to activate.`);
 }
 
 export async function disconnectCommand(
@@ -114,8 +132,7 @@ export async function disconnectCommand(
   const config = clients[client];
 
   if (!config) {
-    console.error(`Unknown client "${client}". Supported: ${Object.keys(clients).join(", ")}`);
-    process.exit(1);
+    exitError(`Unknown client "${client}". Supported: ${Object.keys(clients).join(", ")}`);
   }
 
   let content = await readRawConfig(config.configPath);
@@ -123,7 +140,7 @@ export async function disconnectCommand(
   const section = data[config.serverSection] ?? {};
 
   if (!section[MCP_SERVER_KEY]) {
-    console.log(`Not connected to ${config.name}.`);
+    log.info(`Not connected to ${config.name}.`);
     return;
   }
 
@@ -137,7 +154,7 @@ export async function disconnectCommand(
 
   await writeRawConfig(config.configPath, content);
 
-  console.log(`Disconnected from ${config.name}.`);
-  console.log(`  Config: ${config.configPath}`);
-  console.log(`  Restart ${config.name} to apply.`);
+  log.success(`Disconnected from ${config.name}.`);
+  log.message(`Config: ${config.configPath}`);
+  log.info(`Restart ${config.name} to apply.`);
 }

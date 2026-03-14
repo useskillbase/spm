@@ -147,6 +147,8 @@ export interface ToolsConfig {
   skill_feedback: boolean;
   skill_search: boolean;
   skill_install: boolean;
+  persona_load: boolean;
+  persona_list: boolean;
 }
 
 export interface SearchConfig {
@@ -166,6 +168,7 @@ export interface SkillsConfig {
   search: SearchConfig;
   registries: RegistryEntry[];
   scopes: Record<string, string>; // "@company" → registry name, "*" → default
+  active_persona?: string | null;
   github?: {
     token?: string;
   };
@@ -214,6 +217,33 @@ export interface RegistrySearchResult {
   total: number;
   page: number;
   per_page: number;
+}
+
+// -- Persona types --
+
+export interface PersonaCharacter {
+  role: string;
+  tone?: string;
+  guidelines?: string[];
+  instructions?: string;
+}
+
+export interface PersonaSettings {
+  temperature?: number;
+  top_p?: number;
+  [key: string]: number | undefined;
+}
+
+export interface PersonaManifest {
+  schema_version: number;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  license: string;
+  skills?: SkillDependencies;
+  character: PersonaCharacter;
+  settings?: PersonaSettings;
 }
 
 // -- Runtime types --

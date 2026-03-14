@@ -3,26 +3,66 @@ import path from "node:path";
 import { getGlobalSkillsDir, getInstalledDir } from "../../core/paths.js";
 import { writeIndex } from "../../core/indexer.js";
 import { writeLock } from "../../core/lock.js";
+import { log, exitError } from "../ui.js";
+import type { CommandDef } from "../command.js";
+
+export const command: CommandDef = {
+  name: "uninstall",
+  description: "Uninstall a skill",
+  group: "manage",
+  args: [{ name: "name", required: true }],
+  handler: uninstallCommand,
+};
+
+async function findSkillDir(installedDir: string, name: string): Promise<{ skillDir: string; fullName: string } | null> {
+  // Try author/name format first
+  const nameParts = name.match(/^([a-z0-9-]+)\/([a-z0-9-]+)$/);
+  if (nameParts) {
+    const skillDir = path.join(installedDir, nameParts[1], nameParts[2]);
+    try {
+      await fs.access(skillDir);
+      return { skillDir, fullName: name };
+    } catch {
+      return null;
+    }
+  }
+
+  // Bare name — search through all author dirs
+  let authors: string[];
+  try {
+    authors = await fs.readdir(installedDir);
+  } catch {
+    return null;
+  }
+
+  for (const author of authors) {
+    const authorDir = path.join(installedDir, author);
+    const stat = await fs.stat(authorDir);
+    if (!stat.isDirectory()) continue;
+
+    const skillDir = path.join(authorDir, name);
+    try {
+      await fs.access(skillDir);
+      return { skillDir, fullName: `${author}/${name}` };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
 
 export async function uninstallCommand(name: string): Promise<void> {
-  // Parse author/skill-name
-  const nameParts = name.match(/^([a-z0-9-]+)\/([a-z0-9-]+)$/);
-  if (!nameParts) {
-    console.error(`Error: invalid skill name "${name}". Expected author/name.`);
-    process.exit(1);
-  }
-  const [, author, skillName] = nameParts;
-
   const skillsDir = getGlobalSkillsDir();
   const installedDir = getInstalledDir(skillsDir);
-  const skillDir = path.join(installedDir, author, skillName);
 
-  try {
-    await fs.access(skillDir);
-  } catch {
-    console.error(`Error: skill "${name}" is not installed.`);
-    process.exit(1);
+  const found = await findSkillDir(installedDir, name);
+  if (!found) {
+    exitError(`Skill "${name}" is not installed.`);
   }
+
+  const { skillDir, fullName } = found;
+  const author = fullName.split("/")[0];
 
   await fs.rm(skillDir, { recursive: true });
 
@@ -37,6 +77,6 @@ export async function uninstallCommand(name: string): Promise<void> {
   const index = await writeIndex(skillsDir);
   await writeLock(skillsDir);
 
-  console.log(`Uninstalled ${name}`);
-  console.log(`  ${index.skills.length} skill(s) remaining`);
+  log.success(`Uninstalled ${fullName}`);
+  log.info(`${index.skills.length} skill(s) remaining`);
 }

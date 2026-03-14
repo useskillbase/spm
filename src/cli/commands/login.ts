@@ -1,6 +1,41 @@
 import { execFile } from "node:child_process";
 import { readConfig, writeConfig } from "../../core/config.js";
 import { RegistryClient } from "../../core/registry-client.js";
+import { log, spinner, note, select, isCancel, cancel, exitError } from "../ui.js";
+import type { CommandDef } from "../command.js";
+
+export const commands: CommandDef[] = [
+  {
+    name: "login",
+    description: "Authenticate with a registry server",
+    group: "registry",
+    args: [{ name: "registry-url", required: false }],
+    options: [
+      { flags: "--name <name>", description: "Your author name (for direct registration)" },
+      { flags: "--github", description: "Authenticate via GitHub OAuth" },
+    ],
+    handler: loginCommand,
+  },
+  {
+    name: "registry",
+    description: "Manage remote registries",
+    group: "registry",
+    subcommands: [
+      {
+        name: "add",
+        description: "Add a remote registry",
+        group: "registry",
+        args: [{ name: "url", required: true }],
+        options: [
+          { flags: "--name <name>", description: "Registry name (auto-generated from URL if omitted)" },
+          { flags: "--token <token>", description: "API token" },
+          { flags: "--scope <scope>", description: "Bind a scope to this registry (e.g. @company)" },
+        ],
+        handler: addRegistryCommand,
+      },
+    ],
+  },
+];
 
 function resolveRegistryName(registryUrl: string): string {
   const urlObj = new URL(registryUrl);
@@ -36,19 +71,27 @@ async function resolveRegistryUrl(
 
   const config = await readConfig();
   if (config.registries.length === 0) {
-    console.error("Error: no registries configured. Specify a registry URL or run: skills registry add <url>");
-    process.exit(1);
+    exitError("No registries configured. Specify a registry URL or run: skills registry add <url>");
   }
   if (config.registries.length === 1) {
     return config.registries[0].url;
   }
 
-  console.log("Available registries:");
-  for (let i = 0; i < config.registries.length; i++) {
-    console.log(`  [${i + 1}] ${config.registries[i].name} (${config.registries[i].url})`);
+  // Multiple registries — let user pick
+  const choice = await select({
+    message: "Select a registry:",
+    options: config.registries.map((r) => ({
+      value: r.url,
+      label: `${r.name} (${r.url})`,
+    })),
+  });
+
+  if (isCancel(choice)) {
+    cancel("Cancelled.");
+    process.exit(0);
   }
-  console.error("Error: multiple registries configured. Specify the URL: skills login <registry-url>");
-  process.exit(1);
+
+  return choice as string;
 }
 
 export async function loginCommand(
@@ -69,25 +112,22 @@ async function loginWithName(
   name?: string,
 ): Promise<void> {
   if (!name) {
-    console.error("Error: --name is required for direct registration.");
-    console.error("Or use --github to authenticate via GitHub.");
-    process.exit(1);
+    exitError("--name is required for direct registration.\nOr use --github to authenticate via GitHub.");
   }
 
   const client = new RegistryClient(registryUrl);
 
   try {
     const result = await client.register(name);
-    console.log(`Registered as "${result.author.name}" (id: ${result.author.id})`);
+    log.success(`Registered as "${result.author.name}" (id: ${result.author.id})`);
 
     const registryName = await saveTokenToConfig(registryUrl, result.token);
 
-    console.log(`Token saved to config (registry: ${registryName})`);
-    console.log(`\nYou can now publish skills with: skills publish <path>`);
+    log.info(`Token saved to config (registry: ${registryName})`);
+    log.message("You can now publish skills with: skills publish <path>");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`Login failed: ${message}`);
-    process.exit(1);
+    exitError(`Login failed: ${message}`);
   }
 }
 
@@ -115,13 +155,15 @@ async function loginWithGithub(registryUrl: string): Promise<void> {
   try {
     const device = await client.startDeviceAuth();
 
-    console.log(`\nOpen this URL in your browser:\n`);
-    console.log(`  ${device.verification_uri}\n`);
-    console.log(`And enter the code: ${device.user_code}\n`);
+    note(
+      `URL: ${device.verification_uri}\nCode: ${device.user_code}`,
+      "Open in browser and enter the code",
+    );
 
     openBrowser(device.verification_uri);
 
-    console.log("Waiting for authorization...");
+    const s = spinner();
+    s.start("Waiting for authorization...");
 
     let interval = device.interval * 1000;
 
@@ -131,12 +173,12 @@ async function loginWithGithub(registryUrl: string): Promise<void> {
       const poll = await client.pollDeviceAuth(device.session_id);
 
       if (poll.status === "complete" && poll.author && poll.token) {
-        console.log(`\nAuthenticated as "${poll.author.name}" (id: ${poll.author.id})`);
+        s.stop(`Authenticated as "${poll.author.name}" (id: ${poll.author.id})`);
 
         const registryName = await saveTokenToConfig(registryUrl, poll.token);
 
-        console.log(`Token saved to config (registry: ${registryName})`);
-        console.log(`\nYou can now publish skills with: skills publish <path>`);
+        log.info(`Token saved to config (registry: ${registryName})`);
+        log.message("You can now publish skills with: skills publish <path>");
         return;
       }
 
@@ -146,8 +188,7 @@ async function loginWithGithub(registryUrl: string): Promise<void> {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`GitHub login failed: ${message}`);
-    process.exit(1);
+    exitError(`GitHub login failed: ${message}`);
   }
 }
 
@@ -164,19 +205,19 @@ export async function addRegistryCommand(
   if (existingIdx >= 0) {
     config.registries[existingIdx].url = registryUrl;
     if (options.token) config.registries[existingIdx].token = options.token;
-    console.log(`Updated registry "${registryName}"`);
+    log.success(`Updated registry "${registryName}"`);
   } else {
     config.registries.push({
       name: registryName,
       url: registryUrl,
       token: options.token,
     });
-    console.log(`Added registry "${registryName}" (${registryUrl})`);
+    log.success(`Added registry "${registryName}" (${registryUrl})`);
   }
 
   if (options.scope) {
     config.scopes[options.scope] = registryName;
-    console.log(`Scope "${options.scope}" → "${registryName}"`);
+    log.info(`Scope "${options.scope}" → "${registryName}"`);
   }
 
   await writeConfig(config);

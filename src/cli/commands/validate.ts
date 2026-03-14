@@ -1,6 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { validateSkillManifest } from "../../schema/skill-schema.js";
+import { log, exitError } from "../ui.js";
+import type { CommandDef } from "../command.js";
+
+export const command: CommandDef = {
+  name: "validate",
+  description: "Validate a skill directory",
+  group: "system",
+  args: [{ name: "path", required: true }],
+  handler: validateCommand,
+};
 
 export async function validateCommand(skillPath: string): Promise<void> {
   const dir = path.resolve(skillPath);
@@ -9,12 +19,10 @@ export async function validateCommand(skillPath: string): Promise<void> {
   try {
     const stat = await fs.stat(dir);
     if (!stat.isDirectory()) {
-      console.error(`Error: "${skillPath}" is not a directory.`);
-      process.exit(1);
+      exitError(`"${skillPath}" is not a directory.`);
     }
   } catch {
-    console.error(`Error: "${skillPath}" does not exist.`);
-    process.exit(1);
+    exitError(`"${skillPath}" does not exist.`);
   }
 
   // Check skill.json exists
@@ -23,8 +31,7 @@ export async function validateCommand(skillPath: string): Promise<void> {
   try {
     rawManifest = await fs.readFile(manifestPath, "utf-8");
   } catch {
-    console.error(`Error: skill.json not found in "${skillPath}".`);
-    process.exit(1);
+    exitError(`skill.json not found in "${skillPath}".`);
   }
 
   // Parse JSON
@@ -33,18 +40,13 @@ export async function validateCommand(skillPath: string): Promise<void> {
     data = JSON.parse(rawManifest);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`Error: skill.json is not valid JSON: ${message}`);
-    process.exit(1);
+    exitError(`skill.json is not valid JSON: ${message}`);
   }
 
   // Validate against schema
   const result = validateSkillManifest(data);
   if (!result.valid) {
-    console.error("Validation failed:");
-    for (const error of result.errors) {
-      console.error(`  - ${error}`);
-    }
-    process.exit(1);
+    exitError(`Validation failed:\n${result.errors.map((e) => `  - ${e}`).join("\n")}`);
   }
 
   const manifest = data as { entry?: string; compact_entry?: string; name?: string };
@@ -55,8 +57,7 @@ export async function validateCommand(skillPath: string): Promise<void> {
     try {
       await fs.access(entryPath);
     } catch {
-      console.error(`Error: entry file "${manifest.entry}" not found.`);
-      process.exit(1);
+      exitError(`Entry file "${manifest.entry}" not found.`);
     }
   }
 
@@ -66,10 +67,9 @@ export async function validateCommand(skillPath: string): Promise<void> {
     try {
       await fs.access(compactPath);
     } catch {
-      console.error(`Error: compact_entry file "${manifest.compact_entry}" not found.`);
-      process.exit(1);
+      exitError(`compact_entry file "${manifest.compact_entry}" not found.`);
     }
   }
 
-  console.log(`Valid: ${manifest.name ?? skillPath}`);
+  log.success(`Valid: ${manifest.name ?? skillPath}`);
 }

@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Persona system** — `.person.json` format for defining AI agent personalities with character traits (role, tone, guidelines, instructions), model settings, and skill dependencies
+- **MCP tools**: `persona_list`, `persona_load` — list available personas and activate them in chat
+- **Persona storage**: `~/.skills/personas/` (global) and `.skills/personas/` (project-level, overrides global)
+- **Active persona injection** — active persona's character instructions are injected into MCP server instructions at startup
+- **JSON Schema validation** for `.person.json` manifests
+- **`spm link <path>`** — symlink a local skill directory for development (like `yarn link`)
+- **`spm add <ref> --for [persona]`** — add skill reference to persona file(s) without installing; supports comma-separated names and interactive multiselect when multiple `.person.json` files exist
+- **`spm remove <ref> --from [persona]`** — remove skill reference from persona file(s); supports comma-separated names and interactive multiselect
+- **`spm persona activate <name>`** — activate a persona and auto-install any missing skills from its dependencies
+- **`spm persona remove <name>`** — remove a persona from global installation (auto-deactivates if active)
+- **CLI commands**: `spm persona create/list/activate/deactivate/info/remove/validate` — full persona lifecycle
+
+### Changed
+
+- **CLI command semantics redesigned** following yarn/pnpm conventions:
+  - `spm install skill <ref>` → **`spm add <ref>`** (add a single skill, like `yarn add`)
+  - `spm install` (no args) → installs all dependencies from `skill.json` (like `yarn install`)
+  - `spm uninstall <name>` / `spm remove <name>` → unified skill removal (accepts bare name or `author/name`)
+  - `spm remove <ref> --from [persona]` → remove a skill reference from persona file(s)
+  - `spm create <name>` → simplified scaffold (removed `--scope`, skill name is plain)
+  - `spm persona use` → **`spm persona activate`** (clearer semantics, auto-installs missing skills)
+  - `spm persona off` → **`spm persona deactivate`**
+- **Extensible command architecture** — commands are self-contained modules with declarative `CommandDef` exports; adding a new command = creating a file in `src/cli/commands/` (no `index.ts` changes needed). Entry point reduced from 277 lines to 20 lines.
+- **Brand-themed CLI output** — custom logger with Skillbase brand colors (`#00e5a0` teal, `#22d3ee` cyan, `#ef4444` red) using true-color ANSI; replaces default `@clack/prompts` log styling
+- **Grouped help output** — `spm --help` now shows commands organized by category (Manage skills, Review, Personas, Registry, System) with brand-colored formatting
+- **Auto-discovery command loader** — dynamically imports all command files from `src/cli/commands/` at startup
+
 ## [0.1.4] - 2026-03-14
 
 ### Fixed

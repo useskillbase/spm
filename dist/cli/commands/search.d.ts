@@ -1,3 +1,5 @@
+import type { CommandDef } from "../command.js";
+export declare const command: CommandDef;
 export declare function searchCommand(query: string, options: {
     remote?: boolean;
     all?: boolean;

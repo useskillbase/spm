@@ -1,10 +1,14 @@
+import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getSkillIndex, findSkill } from "../core/registry.js";
 import { loadSkill } from "../core/loader.js";
 import { readConfig } from "../core/config.js";
+const require = createRequire(import.meta.url);
+const pkg = require("../../package.json");
 import { addFeedback, getStatsForSkill } from "../core/feedback.js";
 import { createRegistryClients, getClientForSkill, } from "../core/registry-client.js";
+import { listPersonas, readPersona, getActivePersona, buildCharacterInstructions, } from "../core/persona.js";
 export async function createServer() {
     const config = await readConfig();
     // Build compact skill index for instructions
@@ -19,9 +23,22 @@ export async function createServer() {
     const skillIndex = skillLines.length > 0
         ? `\n\nInstalled skills (name|tokens|trigger|tags|file_patterns):\n${skillLines.join("\n")}`
         : "";
+    // Build persona section for instructions
+    const personas = await listPersonas();
+    const personaIndex = personas.length > 0
+        ? `\n\nAvailable personas: ${personas.map((p) => `@${p.name}`).join(", ")}\nWhen the user mentions a persona with @ (e.g. "@${personas[0]?.name}"), immediately call persona_load with that name. You can also use persona_load directly.`
+        : "";
+    // If active persona is set, inject its character into instructions
+    let activePersonaInstructions = "";
+    const activePersona = await getActivePersona();
+    if (activePersona) {
+        activePersonaInstructions =
+            "\n\n" +
+                buildCharacterInstructions(activePersona.character, activePersona.settings);
+    }
     const server = new McpServer({
         name: "skillbase",
-        version: "0.4.0",
+        version: pkg.version,
     }, {
         capabilities: {
             tools: {},
@@ -36,7 +53,7 @@ export async function createServer() {
             "If a skill's confidence is low (<0.5), treat it as guidance rather than strict instructions.",
             "If no local skill matches, use skill_search with scope='remote' to check remote registries.",
             "If a good remote match is found, suggest it to the user and use skill_install upon approval.",
-        ].join(" ") + skillIndex,
+        ].join(" ") + skillIndex + personaIndex + activePersonaInstructions,
     });
     const loadedSkills = [];
     registerTools(server, config, loadedSkills);
@@ -60,6 +77,12 @@ function registerTools(server, config, loadedSkills) {
     }
     if (config.tools.skill_install) {
         registerSkillInstall(server, config);
+    }
+    if (config.tools.persona_list) {
+        registerPersonaList(server);
+    }
+    if (config.tools.persona_load) {
+        registerPersonaLoad(server);
     }
 }
 function registerSkillList(server) {
@@ -370,6 +393,72 @@ function registerSkillInstall(server, config) {
                 isError: true,
             };
         }
+    });
+}
+function registerPersonaList(server) {
+    server.tool("persona_list", "Lists all available personas. A persona defines the AI's character, tone, and associated skills.", {}, async () => {
+        const personas = await listPersonas();
+        if (personas.length === 0) {
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: "No personas installed. Use `spm persona install <path>` to install a .person.json file.",
+                    },
+                ],
+            };
+        }
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify({ personas }, null, 2),
+                },
+            ],
+        };
+    });
+}
+function registerPersonaLoad(server) {
+    server.tool("persona_load", "Activates a persona by name. Returns the persona's character instructions for you to adopt. Skills from the persona's dependencies are already installed and available via skill_load — do NOT load them all at once, use them as needed.", {
+        name: z.string().describe("Persona name, e.g. 'code-reviewer'"),
+    }, async ({ name }) => {
+        const persona = await readPersona(name);
+        if (!persona) {
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: `Persona "${name}" not found. Use persona_list to see available personas.`,
+                    },
+                ],
+                isError: true,
+            };
+        }
+        const characterText = buildCharacterInstructions(persona.character, persona.settings);
+        const metadata = {
+            name: persona.name,
+            version: persona.version,
+            description: persona.description,
+            skills: persona.skills
+                ? Object.keys(persona.skills)
+                : [],
+            settings: persona.settings ?? null,
+            settings_note: persona.settings
+                ? "Settings like temperature may not be applied if the client does not support runtime changes. Character instructions compensate via prompt."
+                : undefined,
+        };
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: JSON.stringify({ metadata }, null, 2),
+                },
+                {
+                    type: "text",
+                    text: characterText,
+                },
+            ],
+        };
     });
 }
 //# sourceMappingURL=server.js.map

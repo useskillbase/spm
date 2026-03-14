@@ -14,6 +14,8 @@ const DEFAULT_CONFIG: SkillsConfig = {
     skill_feedback: true,
     skill_search: true,
     skill_install: true,
+    persona_load: true,
+    persona_list: true,
   },
   search: {
     remote_enabled: true,
@@ -28,6 +30,7 @@ const DEFAULT_CONFIG: SkillsConfig = {
   scopes: {
     "*": "public",
   },
+  active_persona: null,
 };
 
 export function getDefaultConfig(): SkillsConfig {
@@ -64,6 +67,7 @@ function mergeWithDefaults(partial: Partial<SkillsConfig>): SkillsConfig {
     search: { ...defaults.search, ...partial.search },
     registries: partial.registries ?? defaults.registries,
     scopes: partial.scopes ?? defaults.scopes,
+    active_persona: partial.active_persona ?? defaults.active_persona,
     github: partial.github,
   };
 }

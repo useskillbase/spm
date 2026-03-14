@@ -1,6 +1,22 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { SkillManifest } from "../../types/index.js";
+import { log, spinner, note, cancel, isCancel, text, exitError } from "../ui.js";
+import type { CommandDef } from "../command.js";
+
+export const command: CommandDef = {
+  name: "convert",
+  description: "Convert prompt files (.md, .txt) into skill scaffolds",
+  group: "system",
+  args: [{ name: "source", required: true }],
+  options: [
+    { flags: "--author <author>", description: "Author name" },
+    { flags: "--scope <scope>", description: "Skill scope (default: user)" },
+    { flags: "--license <license>", description: "License (default: MIT)" },
+    { flags: "-o, --output <dir>", description: "Output directory (default: current)" },
+  ],
+  handler: convertCommand,
+};
 
 interface ConvertOptions {
   author?: string;
@@ -111,34 +127,40 @@ async function promptSharedMeta(options: ConvertOptions): Promise<SharedMeta> {
     };
   }
 
-  const readline = await import("node:readline/promises");
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
+  const author = options.author ?? await text({
+    message: "Author name:",
+    validate: (v) => (v?.trim() ? undefined : "Author name is required"),
   });
-
-  try {
-    const author =
-      options.author ?? (await rl.question("Author name: ")).trim();
-    if (!author) {
-      console.error("Error: author name is required.");
-      process.exit(1);
-    }
-
-    const scopeInput = options.scope
-      ? options.scope
-      : (await rl.question("Scope [user]: ")).trim();
-    const scope = scopeInput || "user";
-
-    const licenseInput = options.license
-      ? options.license
-      : (await rl.question("License [MIT]: ")).trim();
-    const license = licenseInput || "MIT";
-
-    return { author, scope, license };
-  } finally {
-    rl.close();
+  if (isCancel(author)) {
+    cancel("Cancelled.");
+    process.exit(0);
   }
+
+  const scope = options.scope ?? await text({
+    message: "Scope:",
+    defaultValue: "user",
+    placeholder: "user",
+  });
+  if (isCancel(scope)) {
+    cancel("Cancelled.");
+    process.exit(0);
+  }
+
+  const license = options.license ?? await text({
+    message: "License:",
+    defaultValue: "MIT",
+    placeholder: "MIT",
+  });
+  if (isCancel(license)) {
+    cancel("Cancelled.");
+    process.exit(0);
+  }
+
+  return {
+    author: String(author).trim(),
+    scope: String(scope) || "user",
+    license: String(license) || "MIT",
+  };
 }
 
 async function collectPromptFiles(source: string): Promise<string[]> {
@@ -157,14 +179,12 @@ async function collectPromptFiles(source: string): Promise<string[]> {
       }
     }
     if (files.length === 0) {
-      console.error(`Error: no prompt files (${[...PROMPT_EXTENSIONS].join(", ")}) found in "${source}".`);
-      process.exit(1);
+      exitError(`No prompt files (${[...PROMPT_EXTENSIONS].join(", ")}) found in "${source}".`);
     }
     return files.sort();
   }
 
-  console.error(`Error: "${source}" is not a file or directory.`);
-  process.exit(1);
+  exitError(`"${source}" is not a file or directory.`);
 }
 
 async function convertFile(
@@ -178,7 +198,7 @@ async function convertFile(
 
   try {
     await fs.access(skillDir);
-    console.error(`  Skipped: ${skillDir}/ already exists`);
+    log.warning(`Skipped: ${skillDir}/ already exists`);
     return "";
   } catch {
     // Does not exist — good
@@ -210,40 +230,42 @@ export async function convertCommand(
   try {
     await fs.access(resolvedSource);
   } catch {
-    console.error(`Error: "${source}" does not exist.`);
-    process.exit(1);
+    exitError(`"${source}" does not exist.`);
   }
 
   const files = await collectPromptFiles(resolvedSource);
 
-  console.log(
+  log.info(
     `Found ${files.length} prompt file${files.length > 1 ? "s" : ""}: ${files.map((f) => path.basename(f)).join(", ")}`,
   );
-  console.log();
 
   const meta = await promptSharedMeta(options);
   const outputDir = path.resolve(options.output ?? ".");
 
-  console.log();
-  console.log("Converting...");
+  const s = spinner();
+  s.start("Converting...");
 
   const created: string[] = [];
   for (const file of files) {
     const name = await convertFile(file, meta, outputDir);
     if (name) {
-      console.log(`  ${name}/  ← ${path.basename(file)}`);
       created.push(name);
     }
   }
 
   if (created.length === 0) {
-    console.log("No skills created.");
+    s.stop("No skills created.");
     return;
   }
 
-  console.log();
-  console.log("Next steps:");
-  console.log("  1. Review and edit skill.json in each directory (description, trigger, tags)");
-  console.log(`  2. skills validate ./${created[0]}`);
-  console.log(`  3. skills install ./${created[0]}`);
+  s.stop(`Converted ${created.length} file(s)`);
+
+  for (const name of created) {
+    log.success(`${name}/`);
+  }
+
+  note(
+    `1. Review and edit skill.json in each directory (description, trigger, tags)\n2. skills validate ./${created[0]}\n3. skills install ./${created[0]}`,
+    "Next steps",
+  );
 }
