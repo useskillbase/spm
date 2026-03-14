@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.1] - 2026-03-14
+
+### Embedded Skill Index in MCP Instructions
+
+The model no longer needs to call `skill_list` to discover skills. The compact index is now embedded directly into MCP server instructions at session start.
+
+### Changed
+
+- **MCP instructions now include skill index** — at server creation, a compact pipe-delimited index (`name|tokens|trigger|tags|file_patterns`) is appended to instructions so the model sees all available skills immediately
+- **Updated instruction wording** — changed from "Use skill_list to discover" to "When a user's task matches a skill's trigger description, load it with skill_load before starting work"
+- `skill_list` remains available for full programmatic access (versions, priorities) but is no longer required for discovery
+
+---
+
 ## [0.10.0] - 2026-03-12
 
 ### Phase 5 — Semver Dependency Resolution

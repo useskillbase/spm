@@ -14,6 +14,19 @@ import type { SkillsConfig } from "../types/index.js";
 export async function createServer(): Promise<McpServer> {
   const config = await readConfig();
 
+  // Build compact skill index for instructions
+  // Format: name|tokens|trigger|tags|patterns (one line per skill)
+  const index = await getSkillIndex();
+  const skillLines = index.skills.map((s) => {
+    let line = `${s.name}|${s.tokens_estimate}t|${s.trigger}|${s.tags.join(",")}`;
+    if (s.file_patterns) line += `|${s.file_patterns.join(",")}`;
+    return line;
+  });
+  const skillIndex =
+    skillLines.length > 0
+      ? `\n\nInstalled skills (name|tokens|trigger|tags|file_patterns):\n${skillLines.join("\n")}`
+      : "";
+
   const server = new McpServer(
     {
       name: "skillbase",
@@ -24,8 +37,8 @@ export async function createServer(): Promise<McpServer> {
         tools: {},
       },
       instructions: [
-        "Skillbase — AI skill manager. Use skill_list to discover available skills,",
-        "then skill_load to load a skill's instructions into context.",
+        "Skillbase — AI skill manager.",
+        "When a user's task matches a skill's trigger description, load it with skill_load before starting work.",
         "Use skill_search to find skills by keyword, tag, or file pattern.",
         "Use skill_context to check which skills are already loaded and token budget.",
         "Higher priority skills take precedence when multiple skills match.",
@@ -33,7 +46,7 @@ export async function createServer(): Promise<McpServer> {
         "If a skill's confidence is low (<0.5), treat it as guidance rather than strict instructions.",
         "If no local skill matches, use skill_search with scope='remote' to check remote registries.",
         "If a good remote match is found, suggest it to the user and use skill_install upon approval.",
-      ].join(" "),
+      ].join(" ") + skillIndex,
     },
   );
 
