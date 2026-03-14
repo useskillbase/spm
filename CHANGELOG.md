@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-14
+
+### Fixed
+
+- **`connect`/`disconnect` now preserve JSONC comments and formatting** — switched from `JSON.parse`/`JSON.stringify` to `jsonc-parser` (`modify`/`applyEdits`). Previously, running `spm connect zed` on a `settings.json` with comments or trailing commas would silently drop all existing settings.
+
 ### Changed
 
 - **Embedded skill index in MCP instructions** — at server startup, a compact pipe-delimited index (`name|tokens|trigger|tags|file_patterns`) is appended to MCP instructions so the model sees all available skills immediately without calling `skill_list`
