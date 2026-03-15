@@ -1,20 +1,40 @@
 {
   "name": "@skillbase/spm",
   "version": "0.4.0",
-  "description": "Package manager for AI skills — discover, install, and publish reusable prompts and tools",
+  "description": "AI skills manager — install, publish, and deploy reusable prompts, personas, and MCP tools across 14 AI clients",
   "type": "module",
-  "repository": "https://github.com/skillbase/spm",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/useskillbase/spm.git"
+  },
+  "bugs": {
+    "url": "https://github.com/useskillbase/spm/issues"
+  },
   "keywords": [
     "ai",
     "skills",
     "package-manager",
     "mcp",
-    "prompts",
-    "cli",
-    "llm",
-    "ai-tools",
+    "mcp-server",
     "model-context-protocol",
-    "prompt-management"
+    "prompts",
+    "prompt-engineering",
+    "prompt-management",
+    "personas",
+    "ai-tools",
+    "ai-agents",
+    "llm",
+    "cli",
+    "claude",
+    "cursor",
+    "vscode",
+    "copilot",
+    "windsurf",
+    "zed",
+    "cline",
+    "jetbrains",
+    "gemini",
+    "ai-workflow"
   ],
   "author": "Skillbase <contact@skillbase.space>",
   "homepage": "https://skillbase.space",

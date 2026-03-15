@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Expanded npm metadata** — description updated to highlight 14 AI clients, personas, and MCP; keywords expanded from 10 to 24 (added client names, `mcp-server`, `ai-agents`, `prompt-engineering`); structured `repository` and `bugs` fields for proper npmjs sidebar links
+- **README rewritten** — added badges (version, license, downloads), "Why Skillbase?" value prop section, full table of 14 supported AI clients, organized command reference by category (Skills, Personas, Registry, System), MCP tools listing
+
 ## [0.4.0] - 2026-03-15
 
 ### Added
