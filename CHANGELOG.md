@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-03-15
+
 - **Stronger MCP instructions** — added MANDATORY PRE-RESPONSE CHECK that forces the model to scan and load matching skills/personas before generating any response
 
 ## [0.2.1] - 2026-03-14

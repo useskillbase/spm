@@ -1,6 +1,6 @@
 {
   "name": "@skillbase/spm",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Package manager for AI skills — discover, install, and publish reusable prompts and tools",
   "type": "module",
   "repository": "https://github.com/skillbase/spm",
