@@ -34,54 +34,93 @@ function buildManifest(name) {
         license: "MIT",
     };
 }
+// Template follows Claude prompting best practices:
+// https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices
+//
+// Key principles applied:
+// - Give Claude a role (focuses behavior and tone)
+// - Be clear and direct (specific instructions, not vague)
+// - Add context with motivation (WHY behind each instruction helps Claude generalize)
+// - Use XML tags for structure (unambiguous parsing of complex prompts)
+// - Use examples effectively (3-5 diverse examples covering edge cases)
+// - Tell what to do, not what not to do (positive framing)
+// - Control output format explicitly (specify structure before examples)
+// - Ask Claude to self-check (verification at the end)
 const SKILL_MD_TEMPLATE = (name) => `<role>
-TODO: one-sentence role definition. E.g., "You are an expert Python developer specializing in data pipelines."
+TODO: one-sentence role definition that sets expertise and tone.
+E.g., "You are an expert Python developer specializing in data pipelines."
 </role>
 
 # ${name}
 
 <context>
 TODO: explain why this skill exists — what problem it solves and what the user is trying to achieve.
-This helps the model understand motivation and make better decisions in ambiguous situations.
+Motivation helps the model make better decisions in ambiguous situations.
+E.g., "This skill prevents data pipeline failures by enforcing schema validation at every stage."
 </context>
 
 <instructions>
-TODO: core step-by-step instructions. Be specific: name exact libraries, APIs, file formats.
-The model follows these literally. Use numbered lists for ordered steps, bullets for unordered.
+TODO: step-by-step instructions the model follows literally.
+Be specific: name exact libraries, APIs, file formats, conventions.
+Use numbered lists for ordered steps, bullets for unordered.
+For each step, include WHY it matters — this helps the model generalize to edge cases.
 
-1. First, ...
-2. Then, ...
-3. Finally, ...
+1. First, ... (because ...)
+2. Then, ... (this ensures ...)
+3. Finally, ... (so that ...)
+
+## Output format
+
+TODO: define the exact structure of the model's response.
+Use a template the model can follow. This is the single most effective way to control output.
+
+\`\`\`
+## Section One
+...
+## Section Two
+...
+\`\`\`
 </instructions>
 
 <examples>
+TODO: provide 3-5 diverse examples. Cover: typical request, edge case, ambiguous input.
+Each example should be relevant to real usage and show the expected output format.
+
 <example>
-<input>User asks: "TODO: describe a typical request"</input>
+<input>User asks: "TODO: typical request"</input>
 <output>
-TODO: show what the model should do — code, commands, or response format.
+TODO: show the model's complete response following the output format above.
 </output>
 </example>
 
 <example>
-<input>User asks: "TODO: describe an edge case"</input>
+<input>User asks: "TODO: edge case or unusual input"</input>
 <output>
-TODO: show how the model handles this edge case.
+TODO: show how the model handles this gracefully.
+</output>
+</example>
+
+<example>
+<input>User asks: "TODO: ambiguous request requiring clarification"</input>
+<output>
+TODO: show how the model asks targeted questions or states assumptions explicitly.
 </output>
 </example>
 </examples>
 
 <guidelines>
-TODO: use positive framing — describe what TO do, not what NOT to do.
-Include motivation (WHY) for each guideline so the model can generalize.
+TODO: cross-cutting principles that apply to all instructions above.
+Use positive framing — describe what TO do, not what NOT to do.
+Include motivation (WHY) so the model can generalize beyond the literal rule.
 
-- Always validate inputs before processing (prevents silent data corruption)
-- Use explicit error messages with fix suggestions (reduces user back-and-forth)
+- Always ... (because ... / this prevents ...)
+- Prefer ... over ... (because ... / this ensures ...)
 </guidelines>
 
 <verification>
 Before completing, verify:
-- [ ] Output matches the expected format from examples
-- [ ] All edge cases are handled
+- [ ] Output follows the format defined in instructions
+- [ ] All edge cases from examples are handled
 - [ ] No security permissions are used beyond what is declared in skill.json
 </verification>
 `;
@@ -99,6 +138,6 @@ export async function createCommand(name) {
     await fs.writeFile(path.join(dir, "skill.json"), JSON.stringify(manifest, null, 2), "utf-8");
     await fs.writeFile(path.join(dir, "SKILL.md"), SKILL_MD_TEMPLATE(name), "utf-8");
     log.success(`Created skill scaffold: ${dir}/`);
-    note(`skill.json — manifest (edit name, trigger, permissions)\nSKILL.md   — instructions for the model\n\nNext steps:\n  1. Edit skill.json — set author, description, trigger, tags\n  2. Edit SKILL.md — write model instructions\n  3. spm validate ./${name}\n  4. spm link ./${name}`, "Scaffold contents");
+    note(`skill.json — manifest (edit name, trigger, permissions)\nSKILL.md   — instructions for the model\n\nNext steps:\n  1. Edit skill.json — set author, description, trigger, tags\n  2. Edit SKILL.md — write model instructions\n     Prompting guide: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices\n  3. spm validate ./${name}\n  4. spm link ./${name}`, "Scaffold contents");
 }
 //# sourceMappingURL=create.js.map

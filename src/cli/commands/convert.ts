@@ -47,33 +47,52 @@ function wrapInStructuredTemplate(name: string, rawContent: string): string {
   }
 
   return `<role>
-TODO: one-sentence role definition for the AI model.
+TODO: one-sentence role definition that sets expertise and tone.
 </role>
 
 # ${name}
 
 <context>
-TODO: explain why this skill exists and what problem it solves.
+TODO: explain why this skill exists — what problem it solves and what the user is trying to achieve.
 </context>
 
 <instructions>
 ${rawContent.trim()}
+
+## Output format
+
+TODO: define the exact structure of the model's response.
 </instructions>
 
 <examples>
+TODO: provide 3-5 diverse examples covering typical requests, edge cases, and ambiguous inputs.
+
 <example>
-<input>TODO: describe a typical user request</input>
-<output>TODO: show the expected model response</output>
+<input>TODO: typical user request</input>
+<output>TODO: expected model response following the output format</output>
+</example>
+
+<example>
+<input>TODO: edge case</input>
+<output>TODO: how the model handles this gracefully</output>
+</example>
+
+<example>
+<input>TODO: ambiguous request</input>
+<output>TODO: how the model clarifies or states assumptions</output>
 </example>
 </examples>
 
 <guidelines>
-TODO: add constraints with motivation (use positive framing — what TO do, not what NOT to do).
+TODO: cross-cutting principles (positive framing, include WHY for each).
+
+- Always ... (because ...)
+- Prefer ... over ... (this ensures ...)
 </guidelines>
 
 <verification>
 Before completing, verify:
-- [ ] Output matches the expected format
+- [ ] Output follows the format defined in instructions
 - [ ] Edge cases are handled
 </verification>
 `;

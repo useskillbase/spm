@@ -45,7 +45,10 @@ export async function createServer() {
         },
         instructions: [
             "Skillbase — AI skill manager.",
-            "When a user's task matches a skill's trigger description, load it with skill_load before starting work.",
+            "MANDATORY PRE-RESPONSE CHECK: Before answering ANY user task, scan the installed skills and personas below.",
+            "If the task matches a trigger description or persona domain — call skill_load / persona_load BEFORE generating any response content.",
+            "This is BLOCKING: do not produce task output until matching tools are loaded.",
+            "Even if you can answer without them — load anyway, they change reasoning quality, not just knowledge.",
             "Use skill_search to find skills by keyword, tag, or file pattern.",
             "Use skill_context to check which skills are already loaded and token budget.",
             "Higher priority skills take precedence when multiple skills match.",
