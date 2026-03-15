@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-03-15
+
 ### Changed
 
 - **Expanded npm metadata** — description updated to highlight 14 AI clients, personas, and MCP; keywords expanded from 10 to 24 (added client names, `mcp-server`, `ai-agents`, `prompt-engineering`); structured `repository` and `bugs` fields for proper npmjs sidebar links
