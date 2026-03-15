@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Deploy target system** — extensible `DeployTarget` interface (`src/targets/`) for exporting and deploying personas to external platforms
+- **OpenClaw integration** — first deploy target:
+  - `spm connect openclaw` (alias: `oc`) — register SPM as MCP server in mcporter.json
+  - `spm persona export <name> -f openclaw` — generate SOUL.md, AGENTS.md, and mcporter.json for an OpenClaw workspace
+  - `spm persona deploy <name> -t openclaw` — full deployment: create workspace, update `openclaw.json` (agents + bindings), Docker volume fragment
+  - `spm persona import --from openclaw` — reverse import: parse SOUL.md back into `.person.json`
+- **Channel binding** — `--bind-channel` / `--bind-account` flags on deploy for routing agents to messaging channels (Telegram, WhatsApp, etc.)
+- **Temperature → thinkingLevel mapping** — persona temperature settings are mapped to OpenClaw thinkingLevel recommendations (≤0.3→high, ≤0.5→medium, ≤0.7→low, ≥0.8→minimal)
+
 ## [0.3.0] - 2026-03-15
 
 ### Added

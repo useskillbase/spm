@@ -243,7 +243,7 @@ describe("client registry", () => {
     const { getClient, getAllClients, getAllClientKeys } = await import("../src/clients/index.js");
 
     const clients = getAllClients();
-    expect(clients.length).toBe(13);
+    expect(clients.length).toBe(14);
 
     for (const client of clients) {
       expect(getClient(client.id)).toBe(client);
