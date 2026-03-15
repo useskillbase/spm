@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **11 new AI client integrations** — `spm connect` now supports 13 clients total:
+  - Claude Desktop, Claude Code, Zed, Cursor, VS Code (Copilot), Windsurf, JetBrains IDEs, Cline, Roo Code, Continue, Amazon Q Developer, Gemini CLI, OpenCode
+- **Modular client architecture** — each AI client is a self-contained module in `src/clients/` with platform-aware config paths
+- **Client aliases** — `jb` → jetbrains, `code` → vscode, `roo` → roo-code
+- **Arbitrary-depth JSON path support** — handles VS Code's nested `mcp.servers.spm` path and client-specific extra fields (Cline/Roo: `disabled`, `alwaysAllow`; VS Code: `type: "stdio"`)
+
 ## [0.2.3] - 2026-03-15
 
 - **Stronger MCP instructions** — added MANDATORY PRE-RESPONSE CHECK that forces the model to scan and load matching skills/personas before generating any response

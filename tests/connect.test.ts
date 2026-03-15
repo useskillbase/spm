@@ -148,3 +148,120 @@ describe("connect/disconnect config merge", () => {
     expect(result.context_servers.spm).toEqual({ command: "node", args: ["serve"] });
   });
 });
+
+// Helper for arbitrary-depth JSON path operations (mirrors connect.ts refactor)
+function addServerAtPath(content: string, jsonPath: string[], value: unknown): string {
+  const edits = modify(content, jsonPath, value, MODIFY_OPTIONS);
+  return applyEdits(content, edits);
+}
+
+function removeServerAtPath(content: string, jsonPath: string[]): string {
+  const edits = modify(content, jsonPath, undefined, MODIFY_OPTIONS);
+  return applyEdits(content, edits);
+}
+
+describe("multi-segment JSON path support", () => {
+  it("supports 3-segment path for vscode format", async () => {
+    const configPath = path.join(tmpDir, "settings.json");
+    let content = "{}";
+
+    content = addServerAtPath(content, ["mcp", "servers", "spm"], {
+      type: "stdio",
+      command: "node",
+      args: ["serve"],
+    });
+    await writeRawConfig(configPath, content);
+
+    const result = parse(await fs.readFile(configPath, "utf-8")) as Record<string, any>;
+    expect(result.mcp.servers.spm).toEqual({ type: "stdio", command: "node", args: ["serve"] });
+  });
+
+  it("preserves existing settings with 3-segment path", async () => {
+    const configPath = path.join(tmpDir, "settings.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      "editor.fontSize": 14,
+      mcp: { servers: {} },
+    }, null, 2));
+
+    let content = await readRawConfig(configPath);
+    content = addServerAtPath(content, ["mcp", "servers", "spm"], {
+      type: "stdio",
+      command: "node",
+      args: ["serve"],
+    });
+    await writeRawConfig(configPath, content);
+
+    const result = parse(await fs.readFile(configPath, "utf-8")) as Record<string, any>;
+    expect(result.mcp.servers.spm).toEqual({ type: "stdio", command: "node", args: ["serve"] });
+    expect(result["editor.fontSize"]).toBe(14);
+  });
+
+  it("removes server at 3-segment path without destroying siblings", async () => {
+    const configPath = path.join(tmpDir, "settings.json");
+    await fs.writeFile(configPath, JSON.stringify({
+      mcp: {
+        servers: {
+          spm: { type: "stdio", command: "node", args: ["serve"] },
+          other: { type: "stdio", command: "other", args: [] },
+        },
+      },
+    }, null, 2));
+
+    let content = await readRawConfig(configPath);
+    content = removeServerAtPath(content, ["mcp", "servers", "spm"]);
+    await writeRawConfig(configPath, content);
+
+    const result = parse(await fs.readFile(configPath, "utf-8")) as Record<string, any>;
+    expect(result.mcp.servers.spm).toBeUndefined();
+    expect(result.mcp.servers.other).toEqual({ type: "stdio", command: "other", args: [] });
+  });
+});
+
+describe("extra fields in server value", () => {
+  it("includes extra fields for cline/roo format", async () => {
+    const configPath = path.join(tmpDir, "cline_mcp_settings.json");
+    let content = "{}";
+
+    const serverValue = {
+      command: "node",
+      args: ["serve"],
+      disabled: false,
+      alwaysAllow: [],
+    };
+    content = addServer(content, "mcpServers", "spm", serverValue);
+    await writeRawConfig(configPath, content);
+
+    const result = parse(await fs.readFile(configPath, "utf-8")) as Record<string, any>;
+    expect(result.mcpServers.spm).toEqual(serverValue);
+    expect(result.mcpServers.spm.disabled).toBe(false);
+    expect(result.mcpServers.spm.alwaysAllow).toEqual([]);
+  });
+});
+
+describe("client registry", () => {
+  it("resolves all client IDs", async () => {
+    const { getClient, getAllClients, getAllClientKeys } = await import("../src/clients/index.js");
+
+    const clients = getAllClients();
+    expect(clients.length).toBe(13);
+
+    for (const client of clients) {
+      expect(getClient(client.id)).toBe(client);
+    }
+
+    // Check aliases resolve
+    expect(getClient("jb")?.id).toBe("jetbrains");
+    expect(getClient("code")?.id).toBe("vscode");
+    expect(getClient("roo")?.id).toBe("roo-code");
+
+    // Unknown client returns undefined
+    expect(getClient("unknown")).toBeUndefined();
+
+    // All keys include aliases
+    const keys = getAllClientKeys();
+    expect(keys).toContain("jetbrains");
+    expect(keys).toContain("jb");
+    expect(keys).toContain("vscode");
+    expect(keys).toContain("code");
+  });
+});

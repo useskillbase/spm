@@ -1,65 +1,33 @@
 import fs from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { parse, modify, applyEdits, type ModificationOptions } from "jsonc-parser";
 import { log, exitError } from "../ui.js";
 import type { CommandDef } from "../command.js";
+import { getClient, getAllClients, getAllClientKeys } from "../../clients/index.js";
 
 export const commands: CommandDef[] = [
   {
     name: "connect",
-    description: "Connect skills to an AI client (claude, zed)",
+    description: "Connect skills to an AI client",
     group: "system",
     args: [{ name: "client", required: true }],
     handler: connectCommand,
   },
   {
     name: "disconnect",
-    description: "Disconnect skills from an AI client (claude, zed)",
+    description: "Disconnect skills from an AI client",
     group: "system",
     args: [{ name: "client", required: true }],
     handler: disconnectCommand,
   },
 ];
 
-const MCP_SERVER_KEY = "spm";
-
 const JSONC_MODIFY_OPTIONS: ModificationOptions = {
   formattingOptions: { tabSize: 2, insertSpaces: true },
 };
 
-interface ClientConfig {
-  name: string;
-  configPath: string;
-  serverSection: string; // JSON key that holds MCP servers
-}
-
-function getClients(): Record<string, ClientConfig> {
-  const home = os.homedir();
-  const platform = process.platform;
-
-  const claudeConfigDir =
-    platform === "darwin"
-      ? path.join(home, "Library", "Application Support", "Claude")
-      : path.join(home, ".config", "Claude");
-
-  return {
-    claude: {
-      name: "Claude Desktop",
-      configPath: path.join(claudeConfigDir, "claude_desktop_config.json"),
-      serverSection: "mcpServers",
-    },
-    zed: {
-      name: "Zed",
-      configPath: path.join(home, ".config", "zed", "settings.json"),
-      serverSection: "context_servers",
-    },
-  };
-}
-
 function getSkillsBin(): string {
-  // Resolve the real path (follows symlinks) to the dist/cli/index.js entry
   const arg1 = process.argv[1];
   if (arg1) {
     try {
@@ -85,76 +53,79 @@ async function writeRawConfig(filePath: string, content: string): Promise<void> 
   await fs.writeFile(filePath, normalized, "utf-8");
 }
 
+function getNestedValue(data: Record<string, unknown>, jsonPath: string[]): unknown {
+  let current: unknown = data;
+  for (const segment of jsonPath) {
+    if (current == null || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+function supportedClientsList(): string {
+  const clients = getAllClients();
+  return clients.map((c) => {
+    const aliases = c.aliases?.length ? ` (${c.aliases.join(", ")})` : "";
+    return `${c.id}${aliases}`;
+  }).join(", ");
+}
+
 export async function connectCommand(
   client: string,
 ): Promise<void> {
-  const clients = getClients();
-  const config = clients[client];
+  const def = getClient(client);
 
-  if (!config) {
-    exitError(`Unknown client "${client}". Supported: ${Object.keys(clients).join(", ")}`);
+  if (!def) {
+    exitError(`Unknown client "${client}". Supported: ${supportedClientsList()}`);
   }
 
-  let content = await readRawConfig(config.configPath);
-  const data = parse(content) as Record<string, Record<string, unknown>>;
-  const section = data[config.serverSection] ?? {};
+  let content = await readRawConfig(def.configPath);
+  const data = parse(content) as Record<string, unknown>;
 
-  if (section[MCP_SERVER_KEY]) {
-    log.info(`Already connected to ${config.name}.`);
-    log.message(`Config: ${config.configPath}`);
+  if (getNestedValue(data, def.jsonPath)) {
+    log.info(`Already connected to ${def.name}.`);
+    log.message(`Config: ${def.configPath}`);
     return;
   }
 
-  const serverValue = {
-    command: process.execPath,
-    args: [getSkillsBin(), "serve"],
-  };
+  const svArgs = { execPath: process.execPath, binPath: getSkillsBin() };
+  const serverValue = def.buildServerValue
+    ? def.buildServerValue(svArgs)
+    : { command: svArgs.execPath, args: [svArgs.binPath, "serve"], ...def.extraFields };
 
-  const edits = modify(
-    content,
-    [config.serverSection, MCP_SERVER_KEY],
-    serverValue,
-    JSONC_MODIFY_OPTIONS,
-  );
+  const edits = modify(content, def.jsonPath, serverValue, JSONC_MODIFY_OPTIONS);
   content = applyEdits(content, edits);
 
-  await writeRawConfig(config.configPath, content);
+  await writeRawConfig(def.configPath, content);
 
-  log.success(`Connected to ${config.name}.`);
-  log.message(`Config: ${config.configPath}`);
-  log.info(`Restart ${config.name} to activate.`);
+  log.success(`Connected to ${def.name}.`);
+  log.message(`Config: ${def.configPath}`);
+  log.info(`Restart ${def.name} to activate.`);
 }
 
 export async function disconnectCommand(
   client: string,
 ): Promise<void> {
-  const clients = getClients();
-  const config = clients[client];
+  const def = getClient(client);
 
-  if (!config) {
-    exitError(`Unknown client "${client}". Supported: ${Object.keys(clients).join(", ")}`);
+  if (!def) {
+    exitError(`Unknown client "${client}". Supported: ${supportedClientsList()}`);
   }
 
-  let content = await readRawConfig(config.configPath);
-  const data = parse(content) as Record<string, Record<string, unknown>>;
-  const section = data[config.serverSection] ?? {};
+  let content = await readRawConfig(def.configPath);
+  const data = parse(content) as Record<string, unknown>;
 
-  if (!section[MCP_SERVER_KEY]) {
-    log.info(`Not connected to ${config.name}.`);
+  if (!getNestedValue(data, def.jsonPath)) {
+    log.info(`Not connected to ${def.name}.`);
     return;
   }
 
-  const edits = modify(
-    content,
-    [config.serverSection, MCP_SERVER_KEY],
-    undefined, // undefined = remove the key
-    JSONC_MODIFY_OPTIONS,
-  );
+  const edits = modify(content, def.jsonPath, undefined, JSONC_MODIFY_OPTIONS);
   content = applyEdits(content, edits);
 
-  await writeRawConfig(config.configPath, content);
+  await writeRawConfig(def.configPath, content);
 
-  log.success(`Disconnected from ${config.name}.`);
-  log.message(`Config: ${config.configPath}`);
-  log.info(`Restart ${config.name} to apply.`);
+  log.success(`Disconnected from ${def.name}.`);
+  log.message(`Config: ${def.configPath}`);
+  log.info(`Restart ${def.name} to apply.`);
 }
