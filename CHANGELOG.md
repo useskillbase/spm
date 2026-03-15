@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-15
+
 ### Added
 
 - **11 new AI client integrations** — `spm connect` now supports 13 clients total:
