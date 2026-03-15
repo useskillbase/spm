@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-15
+
 ### Added
 
 - **Deploy target system** — extensible `DeployTarget` interface (`src/targets/`) for exporting and deploying personas to external platforms
