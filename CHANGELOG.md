@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-03-16
+
 ### Changed
 
 - **`spm search` searches everywhere by default** — remote registries are now included in search results by default (was local-only); use `--local` to search locally only, `--remote` for remote only
