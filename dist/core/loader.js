@@ -8,11 +8,13 @@ export async function loadSkill(entry, compact = false) {
     const skillDir = path.dirname(entryPath);
     const manifestPath = path.join(skillDir, "skill.json");
     let permissions = [];
+    let fileScope;
     let worksWithList = undefined;
     try {
         const manifestRaw = await fs.readFile(manifestPath, "utf-8");
         const manifest = JSON.parse(manifestRaw);
         permissions = manifest.security?.permissions ?? [];
+        fileScope = manifest.security?.file_scope;
         worksWithList = manifest.works_with;
     }
     catch {
@@ -30,6 +32,7 @@ export async function loadSkill(entry, compact = false) {
         version: entry.v,
         content,
         permissions,
+        file_scope: fileScope,
         tokens_estimate: entry.tokens_estimate,
         works_with: worksWithList,
     };

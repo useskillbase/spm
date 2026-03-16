@@ -18,7 +18,44 @@ import {
   getActivePersona,
   buildCharacterInstructions,
 } from "../core/persona.js";
-import type { SkillsConfig } from "../types/index.js";
+import type { SkillsConfig, LoadedSkillSession } from "../types/index.js";
+import { registerProxyTools } from "./proxy-tools.js";
+import { buildPolicyBlock } from "./permissions.js";
+
+function buildInstructions(
+  skillIndex: string,
+  personaIndex: string,
+  activePersonaInstructions: string,
+): string {
+  const lines = [
+    "Skillbase — AI skill manager.",
+
+    // ── Mandatory loading protocol ──
+    "MANDATORY PRE-RESPONSE CHECK: Before answering ANY user task, scan the installed skills and personas below.",
+    "If the task matches a trigger description or persona domain — call skill_load / persona_load BEFORE generating any response content.",
+    "This is BLOCKING: do not produce task output until matching tools are loaded.",
+    "Even if you can answer without them — load anyway, they change reasoning quality, not just knowledge.",
+
+    // ── How to match skills ──
+    "HOW TO MATCH: For each user message, check ALL of the following against every installed skill:",
+    "1. Does the task topic overlap with the skill's trigger description?",
+    "2. Do any keywords in the message match the skill's tags?",
+    "3. Are any files being read or edited that match the skill's file_patterns?",
+    "4. Does the programming language or domain match?",
+    "If ANY of these match — load the skill. Load MULTIPLE skills when several match (e.g. a TypeScript security review should load both the TypeScript and security skills).",
+    "When in doubt, load the skill — the cost of loading an unnecessary skill is low, the cost of missing a relevant one is high.",
+
+    // ── Operational guidance ──
+    "Use skill_search to find skills by keyword, tag, or file pattern.",
+    "Use skill_context to check which skills are already loaded and token budget.",
+    "Higher priority skills take precedence when multiple skills match.",
+    "After using a skill to complete a task, send skill_feedback when you observe a positive signal from the user — such as: explicit gratitude ('thanks', 'спасибо', 'great', 'perfect'), moving on to the next task (implies satisfaction with the current one), or asking to continue or go deeper into the result. This feedback helps improve skill quality and is sent only as a reaction to user satisfaction, never automatically. Do NOT send feedback if the user expresses dissatisfaction or asks to redo the work — in that case, send feedback with result 'partial' or 'failure' only after the rework is complete and accepted.",
+    "If a skill's confidence is low (<0.5), treat it as guidance rather than strict instructions.",
+    "If no local skill matches, use skill_search with scope='remote' to check remote registries.",
+    "If a good remote match is found, suggest it to the user and use skill_install upon approval.",
+  ];
+  return lines.join(" ") + skillIndex + personaIndex + activePersonaInstructions;
+}
 
 export async function createServer(): Promise<McpServer> {
   const config = await readConfig();
@@ -61,25 +98,11 @@ export async function createServer(): Promise<McpServer> {
       capabilities: {
         tools: {},
       },
-      instructions: [
-        "Skillbase — AI skill manager.",
-        "MANDATORY PRE-RESPONSE CHECK: Before answering ANY user task, scan the installed skills and personas below.",
-        "If the task matches a trigger description or persona domain — call skill_load / persona_load BEFORE generating any response content.",
-        "This is BLOCKING: do not produce task output until matching tools are loaded.",
-        "Even if you can answer without them — load anyway, they change reasoning quality, not just knowledge.",
-        "Use skill_search to find skills by keyword, tag, or file pattern.",
-        "Use skill_context to check which skills are already loaded and token budget.",
-        "Higher priority skills take precedence when multiple skills match.",
-        "After completing a task with a skill, call skill_feedback with the result.",
-        "If a skill's confidence is low (<0.5), treat it as guidance rather than strict instructions.",
-        "If no local skill matches, use skill_search with scope='remote' to check remote registries.",
-        "If a good remote match is found, suggest it to the user and use skill_install upon approval.",
-      ].join(" ") + skillIndex + personaIndex + activePersonaInstructions,
+      instructions: buildInstructions(skillIndex, personaIndex, activePersonaInstructions),
     },
   );
 
-  const loadedSkills: Array<{ name: string; version: string; tokens: number }> =
-    [];
+  const loadedSkills: LoadedSkillSession[] = [];
 
   registerTools(server, config, loadedSkills);
 
@@ -89,13 +112,13 @@ export async function createServer(): Promise<McpServer> {
 function registerTools(
   server: McpServer,
   config: SkillsConfig,
-  loadedSkills: Array<{ name: string; version: string; tokens: number }>,
+  loadedSkills: LoadedSkillSession[],
 ): void {
   if (config.tools.skill_list) {
     registerSkillList(server);
   }
   if (config.tools.skill_load) {
-    registerSkillLoad(server, loadedSkills);
+    registerSkillLoad(server, loadedSkills, config);
   }
   if (config.tools.skill_context) {
     registerSkillContext(server, loadedSkills);
@@ -114,6 +137,9 @@ function registerTools(
   }
   if (config.tools.persona_load) {
     registerPersonaLoad(server);
+  }
+  if (config.tools.skill_exec) {
+    registerProxyTools(server, loadedSkills);
   }
 }
 
@@ -144,7 +170,8 @@ function registerSkillList(server: McpServer): void {
 
 function registerSkillLoad(
   server: McpServer,
-  loadedSkills: Array<{ name: string; version: string; tokens: number }>,
+  loadedSkills: LoadedSkillSession[],
+  config: SkillsConfig,
 ): void {
   server.tool(
     "skill_load",
@@ -180,29 +207,40 @@ function registerSkillLoad(
           name: loaded.name,
           version: loaded.version,
           tokens: loaded.tokens_estimate,
+          permissions: loaded.permissions,
+          file_scope: loaded.file_scope,
         });
 
         const metadata = {
           name: loaded.name,
           version: loaded.version,
           permissions: loaded.permissions,
+          file_scope: loaded.file_scope,
           tokens_estimate: loaded.tokens_estimate,
           confidence: stats?.confidence ?? null,
           works_with: loaded.works_with ?? [],
         };
 
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ metadata }, null, 2),
-            },
-            {
-              type: "text" as const,
-              text: loaded.content,
-            },
-          ],
-        };
+        const contentBlocks: Array<{ type: "text"; text: string }> = [
+          {
+            type: "text" as const,
+            text: JSON.stringify({ metadata }, null, 2),
+          },
+          {
+            type: "text" as const,
+            text: loaded.content,
+          },
+        ];
+
+        // Inject permission policy when proxy tools are enabled
+        if (config.tools.skill_exec && loaded.permissions.length > 0) {
+          contentBlocks.push({
+            type: "text" as const,
+            text: buildPolicyBlock(loaded.permissions),
+          });
+        }
+
+        return { content: contentBlocks };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return {
@@ -221,7 +259,7 @@ function registerSkillLoad(
 
 function registerSkillContext(
   server: McpServer,
-  loadedSkills: Array<{ name: string; version: string; tokens: number }>,
+  loadedSkills: LoadedSkillSession[],
 ): void {
   server.tool(
     "skill_context",

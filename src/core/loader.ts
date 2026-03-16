@@ -14,12 +14,14 @@ export async function loadSkill(
   const skillDir = path.dirname(entryPath);
   const manifestPath = path.join(skillDir, "skill.json");
   let permissions: string[] = [];
+  let fileScope: string[] | undefined;
   let worksWithList: LoadedSkill["works_with"] = undefined;
 
   try {
     const manifestRaw = await fs.readFile(manifestPath, "utf-8");
     const manifest = JSON.parse(manifestRaw) as SkillManifest;
     permissions = manifest.security?.permissions ?? [];
+    fileScope = manifest.security?.file_scope;
     worksWithList = manifest.works_with;
   } catch {
     // Metadata unavailable — continue with defaults
@@ -38,6 +40,7 @@ export async function loadSkill(
     version: entry.v,
     content,
     permissions,
+    file_scope: fileScope,
     tokens_estimate: entry.tokens_estimate,
     works_with: worksWithList,
   };

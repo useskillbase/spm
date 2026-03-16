@@ -81,7 +81,7 @@ export interface SkillsLock {
     total_tokens_estimate: number;
     skills: Record<string, LockSkillEntry>;
 }
-export type FeedbackResult = "success" | "partial" | "failure" | "false_trigger";
+export type FeedbackResult = "success" | "partial" | "failure" | "false_trigger" | "violation";
 export type FeedbackType = "automatic" | "explicit";
 export interface FeedbackContext {
     task_type?: string;
@@ -121,6 +121,7 @@ export interface ToolsConfig {
     skill_install: boolean;
     persona_load: boolean;
     persona_list: boolean;
+    skill_exec: boolean;
 }
 export interface SearchConfig {
     remote_enabled: boolean;
@@ -209,8 +210,16 @@ export interface LoadedSkill {
     version: string;
     content: string;
     permissions: string[];
+    file_scope?: string[];
     tokens_estimate: number;
     works_with?: SkillWorksWithEntry[];
     confidence?: number | null;
+}
+export interface LoadedSkillSession {
+    name: string;
+    version: string;
+    tokens: number;
+    permissions: string[];
+    file_scope?: string[];
 }
 //# sourceMappingURL=index.d.ts.map

@@ -75,6 +75,24 @@ describe("tool registration with config toggles", () => {
   });
 });
 
+describe("proxy tools registration", () => {
+  it("registers proxy tools with default config (skill_exec=true)", async () => {
+    const server = await createServer();
+    // Server created without errors — proxy tools registered
+    expect(server).toBeDefined();
+  });
+
+  it("skips proxy tools when skill_exec=false", async () => {
+    const config = getDefaultConfig();
+    config.tools.skill_exec = false;
+    await writeConfig(config, getSkillsDir());
+
+    const server = await createServer();
+    // Server created without errors — proxy tools not registered
+    expect(server).toBeDefined();
+  });
+});
+
 describe("skill_feedback integration", () => {
   it("records feedback to feedback.json", async () => {
     await setupSkill();

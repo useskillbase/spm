@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-16
+
+### Added
+
+- **Permission Proxy Tools** — four new MCP tools (`skill_exec_bash`, `skill_exec_write`, `skill_exec_read`, `skill_exec_fetch`) that enforce skill-declared permissions at runtime. When a skill declares `permissions: ["file:read", "file:write"]` in `skill.json`, the proxy tools block any undeclared operations (e.g. bash execution, network access) and return a permission denied error
+- **`file_scope` enforcement** — skills can restrict file operations to specific directories via `security.file_scope` in `skill.json`. The proxy tools validate every file path against the declared scope using `path.resolve()` + prefix matching, preventing path traversal attacks
+- **Policy injection in `skill_load`** — when proxy tools are enabled, `skill_load` injects a `<SKILL_POLICY>` block into the response that instructs the model which proxy tools to use and which actions are denied
+- **Violation tracking** — when a proxy tool denies an action, it automatically records a `violation` feedback entry via `skill_feedback`, which feeds into the confidence scoring system. Skills that trigger violations get lower confidence over time
+- **Audit log** — every proxy tool call is recorded in an in-memory audit log with timestamp, skill name, tool, action, and allowed/denied status (accessible via `getAuditLog()`)
+- **`LoadedSkillSession` type** — session state now tracks permissions and file_scope per loaded skill, enabling runtime enforcement
+
+### Changed
+
+- **`skill_load` response includes `file_scope`** — metadata now exposes the loaded skill's file_scope alongside permissions
+- **`skill_context` shows permissions** — loaded skills in session context now include their permissions and file_scope
+
 ## [0.4.2] - 2026-03-16
 
 ### Changed

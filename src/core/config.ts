@@ -16,6 +16,7 @@ const DEFAULT_CONFIG: SkillsConfig = {
     skill_install: true,
     persona_load: true,
     persona_list: true,
+    skill_exec: true,
   },
   search: {
     remote_enabled: true,
