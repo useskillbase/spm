@@ -34,7 +34,7 @@ describe("buildIndex", () => {
     const index = await buildIndex(tmpDir);
 
     expect(index.skills).toHaveLength(1);
-    expect(index.skills[0].name).toBe("skill");
+    expect(index.skills[0].name).toBe("test/skill");
     expect(index.skills[0].v).toBe("1.0.0");
     expect(index.skills[0].trigger).toBe("Test trigger");
     expect(index.skills[0].tags).toEqual(["test"]);
@@ -58,9 +58,9 @@ describe("buildIndex", () => {
 
     const index = await buildIndex(tmpDir);
     expect(index.skills.map((s) => s.name)).toEqual([
-      "high",
-      "mid",
-      "low",
+      "test/high",
+      "test/mid",
+      "test/low",
     ]);
   });
 
@@ -80,7 +80,7 @@ describe("buildIndex", () => {
 
     const index = await buildIndex(tmpDir);
     expect(index.skills).toHaveLength(1);
-    expect(index.skills[0].name).toBe("myskill");
+    expect(index.skills[0].name).toBe("myauthor/myskill");
   });
 
   it("skips skills with invalid skill.json", async () => {

@@ -27,7 +27,7 @@ describe("buildLock", () => {
     await installSkillFixture(tmpDir, manifest, "# Content here");
     const lock = await buildLock(tmpDir);
 
-    const entry = lock.skills["skill"];
+    const entry = lock.skills["test/skill"];
     expect(entry).toBeDefined();
     expect(entry.version).toBe("1.0.0");
     expect(entry.integrity).toMatch(/^sha256-[a-f0-9]{64}$/);
@@ -42,7 +42,7 @@ describe("buildLock", () => {
     const lock = await buildLock(tmpDir);
 
     expect(lock.total_tokens_estimate).toBe(
-      lock.skills["a"].tokens_estimate + lock.skills["b"].tokens_estimate,
+      lock.skills["test/a"].tokens_estimate + lock.skills["test/b"].tokens_estimate,
     );
   });
 
@@ -51,7 +51,7 @@ describe("buildLock", () => {
     await installSkillFixture(tmpDir, minimalManifest({ name: "b" }), "Content B");
     const lock = await buildLock(tmpDir);
 
-    expect(lock.skills["a"].integrity).not.toBe(lock.skills["b"].integrity);
+    expect(lock.skills["test/a"].integrity).not.toBe(lock.skills["test/b"].integrity);
   });
 
   it("skips skills with missing skill.json", async () => {
@@ -72,6 +72,6 @@ describe("writeLock", () => {
     const raw = await fs.readFile(path.join(tmpDir, "skills.lock"), "utf-8");
     const lock = JSON.parse(raw);
     expect(lock.lock_version).toBe(1);
-    expect(lock.skills["skill"]).toBeDefined();
+    expect(lock.skills["test/skill"]).toBeDefined();
   });
 });

@@ -23,7 +23,7 @@ describe("loadSkill", () => {
 
     const loaded = await loadSkill(index.skills[0]);
     expect(loaded.content).toBe(content);
-    expect(loaded.name).toBe("skill");
+    expect(loaded.name).toBe("test/skill");
     expect(loaded.version).toBe("1.0.0");
   });
 
