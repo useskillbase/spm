@@ -18,7 +18,7 @@ export const command: CommandDef = {
   description: "Remove a skill or skill reference from persona",
   group: "manage",
   aliases: ["rm"],
-  args: [{ name: "name", required: true }],
+  args: [{ name: "name", required: false }],
   options: [
     { flags: "--from [persona]", description: "Remove skill reference from persona file(s)" },
   ],
@@ -137,17 +137,20 @@ async function removeFromPersonas(skillRef: string, fromArg?: string): Promise<v
 }
 
 export async function removeCommand(
-  name: string,
+  name: string | undefined,
   options: { from?: string | boolean },
 ): Promise<void> {
   // --from: remove skill ref from persona file(s)
   if (options.from !== undefined) {
+    if (!name) {
+      exitError("Skill name is required when using --from.");
+    }
     const fromArg = typeof options.from === "string" ? options.from : undefined;
     await removeFromPersonas(name, fromArg);
     return;
   }
 
-  // Default: uninstall skill
+  // Default: uninstall skill (interactive if no name)
   await uninstallCommand(name);
 }
 

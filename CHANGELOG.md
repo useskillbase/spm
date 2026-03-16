@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`spm search` searches everywhere by default** — remote registries are now included in search results by default (was local-only); use `--local` to search locally only, `--remote` for remote only
+- **Remote results sorted by popularity** — remote search results are sorted by install count (descending)
+- **Interactive install from search** — after displaying remote results, `spm search` offers a multiselect prompt to install selected skills directly
+- **Interactive `spm remove` / `spm uninstall`** — skill name is now optional; when omitted, shows an interactive picker with all installed skills
+- **Interactive `spm persona remove`** — persona name is now optional; when omitted, shows an interactive picker with all installed personas
+- **Truncated long descriptions** — search result descriptions are truncated to prevent UI breakage in terminal
+
 ## [0.4.1] - 2026-03-15
 
 ### Changed

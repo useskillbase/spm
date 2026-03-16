@@ -63,7 +63,7 @@ export async function buildIndex(skillsDir: string): Promise<SkillIndex> {
       const tokensEstimate = await estimateTokens(entryPath);
 
       const entry: IndexSkillEntry = {
-        name: manifest.name,
+        name: `${author}/${manifest.name}`,
         v: manifest.version,
         trigger: manifest.trigger.description,
         tags: manifest.trigger.tags,

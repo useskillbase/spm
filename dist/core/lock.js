@@ -71,7 +71,7 @@ export async function buildLock(skillsDir) {
                 tokens_estimate: tokensEstimate,
                 dependencies: manifest.dependencies,
             };
-            lock.skills[manifest.name] = entry;
+            lock.skills[`${author}/${manifest.name}`] = entry;
             lock.total_tokens_estimate += tokensEstimate;
         }
     }

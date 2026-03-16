@@ -14,7 +14,7 @@ import { validatePersonaManifest } from "../../schema/persona-schema.js";
 import { installSingleFromRegistry, resolveSkillsDir } from "./add.js";
 import { getTarget, getAllTargetIds } from "../../targets/index.js";
 import type { PersonaManifest, LoadedSkill } from "../../types/index.js";
-import { log, spinner, note, exitError } from "../ui.js";
+import { log, spinner, note, multiselect, isCancel, cancel, exitError } from "../ui.js";
 import type { CommandDef } from "../command.js";
 
 function parseSkillRef(ref: string): { author: string; name: string } | null {
@@ -160,9 +160,42 @@ async function personaDeactivateCommand(): Promise<void> {
   log.info("Restart your MCP client to apply.");
 }
 
-async function personaRemoveCommand(name: string): Promise<void> {
+async function personaRemoveCommand(name?: string): Promise<void> {
   const { removePersona } = await import("./remove.js");
-  await removePersona(name);
+
+  if (name) {
+    await removePersona(name);
+    return;
+  }
+
+  const names = await selectPersonasInteractively();
+  for (const n of names) {
+    await removePersona(n);
+  }
+}
+
+async function selectPersonasInteractively(): Promise<string[]> {
+  const personas = await listPersonas();
+
+  if (personas.length === 0) {
+    exitError("No personas installed.");
+  }
+
+  const choices = await multiselect({
+    message: "Select persona(s) to remove:",
+    options: personas.map((p) => ({
+      value: p.name,
+      label: `${p.name}@${p.version}`,
+    })),
+    required: true,
+  });
+
+  if (isCancel(choices)) {
+    cancel("Cancelled.");
+    process.exit(0);
+  }
+
+  return choices as string[];
 }
 
 async function personaInfoCommand(name: string): Promise<void> {
@@ -448,7 +481,7 @@ export const command: CommandDef = {
       name: "remove",
       description: "Remove a persona from global installation",
       group: "personas",
-      args: [{ name: "name", required: true }],
+      args: [{ name: "name", required: false }],
       handler: personaRemoveCommand,
     },
     {

@@ -1,4 +1,3 @@
-import path from "node:path";
 import { getSkillIndex } from "../../core/registry.js";
 import { log, note } from "../ui.js";
 export const command = {
@@ -17,15 +16,6 @@ export async function listCommand(options) {
         log.info("No skills installed.");
         return;
     }
-    // Extract author/name from entry path: .../installed/<author>/<name>/...
-    function displayName(skill) {
-        const parts = skill.entry.split(path.sep);
-        const installedIdx = parts.lastIndexOf("installed");
-        if (installedIdx >= 0 && installedIdx + 2 < parts.length) {
-            return `${parts[installedIdx + 1]}/${parts[installedIdx + 2]}`;
-        }
-        return skill.name;
-    }
     if (options.verbose) {
         for (const skill of index.skills) {
             const lines = [
@@ -37,13 +27,13 @@ export async function listCommand(options) {
             if (skill.file_patterns) {
                 lines.push(`patterns: ${skill.file_patterns.join(", ")}`);
             }
-            note(lines.join("\n"), `${displayName(skill)}@${skill.v}`);
+            note(lines.join("\n"), `${skill.name}@${skill.v}`);
         }
     }
     else {
         const lines = index.skills.map((skill) => {
             const tokens = String(skill.tokens_estimate).padStart(5);
-            return `${displayName(skill)}@${skill.v}  ${tokens} tokens  [${skill.tags.join(", ")}]`;
+            return `${skill.name}@${skill.v}  ${tokens} tokens  [${skill.tags.join(", ")}]`;
         });
         log.info(`${index.skills.length} skill(s) installed`);
         log.message(lines.join("\n"));
