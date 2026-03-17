@@ -1,118 +1,107 @@
-import fs from "node:fs/promises";
 import path from "node:path";
+import semver from "semver";
 import { readConfig } from "../../core/config.js";
-import { validateSkillManifest } from "../../schema/skill-schema.js";
-import { RegistryClient } from "../../core/registry-client.js";
-import { packSkill } from "../../core/storage/index.js";
-import type { SkillManifest } from "../../types/index.js";
-import { log, spinner, note, exitError, formatSize } from "../ui.js";
+import { getClientForSkill } from "../../core/registry-client.js";
+import { getSkillIndex } from "../../core/registry.js";
+import { installSingleFromRegistry, resolveSkillsDir } from "./add.js";
+import { writeIndex } from "../../core/indexer.js";
+import { writeLock } from "../../core/lock.js";
+import { log, spinner, exitError } from "../ui.js";
 import type { CommandDef } from "../command.js";
 
 export const command: CommandDef = {
   name: "update",
-  description: "Update an existing skill in the registry (re-publish)",
-  group: "registry",
-  args: [{ name: "source", required: true }],
+  description: "Update installed skills to latest versions",
+  group: "manage",
+  args: [{ name: "skill", required: false, description: "Specific skill to update (author/name)" }],
   options: [
-    { flags: "--registry <name>", description: "Target registry" },
-    { flags: "--dry-run", description: "Show what would happen without executing" },
+    { flags: "-g, --global", description: "Update globally installed skills" },
+    { flags: "-f, --force", description: "Re-install even if version matches (useful when content changed)" },
   ],
   handler: updateCommand,
 };
 
 export async function updateCommand(
-  source: string,
-  options: { registry?: string; dryRun?: boolean },
+  skill: string | undefined,
+  options: { global?: boolean; force?: boolean },
 ): Promise<void> {
+  const { skillsDir } = await resolveSkillsDir(options.global);
+  const index = await getSkillIndex();
   const config = await readConfig();
 
-  let registryName = options.registry;
-  if (!registryName) {
-    registryName = config.scopes["*"];
-  }
-  if (!registryName) {
-    exitError("No default registry configured. Use 'skills login <url>' first.");
+  if (index.skills.length === 0) {
+    exitError("No skills installed.");
   }
 
-  const reg = config.registries.find((r) => r.name === registryName);
-  if (!reg) {
-    exitError(`Registry "${registryName}" not found in config.`);
+  // Filter to specific skill if provided
+  const toCheck = skill
+    ? index.skills.filter((s) => s.name === skill)
+    : index.skills;
+
+  if (skill && toCheck.length === 0) {
+    exitError(`Skill "${skill}" is not installed.`);
   }
 
-  if (!reg.token) {
-    exitError(`No token for registry "${registryName}". Use 'skills login' first.`);
-  }
-
-  const client = new RegistryClient(reg.url, reg.token);
-
-  // Read and validate local skill
-  const skillDir = path.resolve(source);
-  const manifestPath = path.join(skillDir, "skill.json");
-
-  let manifest: SkillManifest;
-  try {
-    const raw = await fs.readFile(manifestPath, "utf-8");
-    const data = JSON.parse(raw) as unknown;
-    const validation = validateSkillManifest(data);
-    if (!validation.valid) {
-      exitError(`Invalid skill.json:\n${validation.errors.map((e) => `  - ${e}`).join("\n")}`);
-    }
-    manifest = data as SkillManifest;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      exitError(`Cannot read skill.json in "${source}".`);
-    }
-    throw err;
-  }
-
-  // Verify skill exists in registry
-  const existing = await client.getSkill(manifest.author, manifest.name);
-  if (!existing) {
-    exitError(`"${manifest.author}/${manifest.name}" not found in registry. Use 'skills publish' for first-time publishing.`);
-  }
-
-  const previousVersion = existing.version;
-
-  if (!manifest.entry) {
-    exitError("skill.json has no 'entry' field. Bundles cannot be updated — only skills with an entry point.");
-  }
-
-  // Read entry content
-  const entryPath = path.join(skillDir, manifest.entry);
-  const content = await fs.readFile(entryPath, "utf-8");
-
-  let compactContent: string | undefined;
-  if (manifest.compact_entry) {
-    try {
-      compactContent = await fs.readFile(path.join(skillDir, manifest.compact_entry), "utf-8");
-    } catch {
-      // Optional
-    }
-  }
-
-  // Package
   const s = spinner();
-  s.start(`Packaging ${manifest.name}@${manifest.version}...`);
-  const pkg = await packSkill(skillDir);
+  s.start(`Checking ${toCheck.length} skill(s) for updates...`);
 
-  if (options.dryRun) {
-    s.stop("Done (dry-run)");
-    note(
-      `Would update ${manifest.name}@${manifest.version} (was ${previousVersion})\nPackage size: ${formatSize(pkg.size)} (${pkg.filesCount} files)\nIntegrity: ${pkg.integrity}`,
-      "Dry run",
-    );
-    return;
+  let updated = 0;
+  let upToDate = 0;
+  let failed = 0;
+
+  for (const entry of toCheck) {
+    // entry.name is "author/name" or bare "name"
+    const parts = entry.name.split("/");
+    if (parts.length !== 2) {
+      // Can't update non-registry skills (no author/name format)
+      continue;
+    }
+
+    const [author, name] = parts;
+    const client = getClientForSkill(config, entry.name);
+    if (!client) continue;
+
+    try {
+      const versions = await client.getVersions(author, name);
+      if (versions.length === 0) continue;
+
+      const latest = versions[0].version;
+      const current = entry.v;
+
+      const isUpToDate = semver.valid(latest) && semver.valid(current) && semver.lte(latest, current);
+
+      if (isUpToDate && !options.force) {
+        upToDate++;
+        continue;
+      }
+
+      const label = isUpToDate
+        ? `Re-installing ${entry.name}@${current}...`
+        : `Updating ${entry.name} ${current} → ${latest}...`;
+      s.message(label);
+      await installSingleFromRegistry(author, name, skillsDir, client, isUpToDate ? current : latest);
+      updated++;
+      log.success(isUpToDate
+        ? `Re-installed ${entry.name}@${current}`
+        : `Updated ${entry.name} ${current} → ${latest}`,
+      );
+    } catch (err) {
+      failed++;
+      log.error(`Failed to update ${entry.name}: ${(err as Error).message}`);
+    }
   }
 
-  // Publish (server handles update vs insert)
-  s.message(`Updating ${manifest.name} in ${reg.name}...`);
+  s.stop("Done");
 
-  const result = await client.publishWithArchive(
-    { manifest, content, compact_content: compactContent },
-    pkg.data,
-  );
+  await writeIndex(skillsDir);
+  await writeLock(skillsDir);
 
-  s.stop(`Updated ${result.name}@${result.version} (was ${previousVersion})`);
-  log.info(`Size: ${formatSize(result.size ?? pkg.size)}`);
-  log.info(`Tokens: ~${Math.ceil(content.length / 4).toLocaleString()}`);
+  const parts: string[] = [];
+  if (updated > 0) parts.push(`${updated} updated`);
+  if (upToDate > 0) parts.push(`${upToDate} up to date`);
+  if (failed > 0) parts.push(`${failed} failed`);
+
+  if (parts.length > 0) {
+    log.success(parts.join(", "));
+  }
 }

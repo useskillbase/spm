@@ -23,7 +23,7 @@ const DEFAULT_CONFIG = {
     registries: [
         {
             name: "public",
-            url: "https://skillbase-registry.fly.dev",
+            url: "https://registry.skillbase.space",
         },
     ],
     scopes: {

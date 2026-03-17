@@ -25,7 +25,7 @@ describe("config with registries", () => {
   it("default config has public registry and default scope", async () => {
     const config = getDefaultConfig();
     expect(config.registries).toEqual([
-      { name: "public", url: "https://skillbase-registry.fly.dev" },
+      { name: "public", url: "https://registry.skillbase.space" },
     ]);
     expect(config.scopes).toEqual({ "*": "public" });
     expect(config.github).toBeUndefined();

@@ -5,47 +5,40 @@ import { validateSkillManifest } from "../../schema/skill-schema.js";
 import { RegistryClient } from "../../core/registry-client.js";
 import { packSkill } from "../../core/storage/index.js";
 import { parseGitHubUrl } from "../../core/github/client.js";
-import type { SkillManifest } from "../../types/index.js";
+import type { SkillManifest, RegistryEntry } from "../../types/index.js";
 import { log, spinner, note, exitError, formatSize } from "../ui.js";
 import type { CommandDef } from "../command.js";
+
+const BATCH_LIMIT = 1000;
 
 export const command: CommandDef = {
   name: "publish",
   description: "Publish a skill to registry",
   group: "registry",
-  args: [{ name: "source", required: true }],
+  args: [{ name: "source", required: false }],
   options: [
     { flags: "--registry <name>", description: "Publish to a specific registry" },
     { flags: "--github", description: "Source is a GitHub URL" },
     { flags: "--dry-run", description: "Show what would happen without executing" },
+    { flags: "--all", description: "Publish all skills found in subdirectories (max 1000)" },
   ],
   handler: publishCommand,
 };
 
 export async function publishCommand(
-  source: string,
-  options: { registry?: string; github?: boolean; dryRun?: boolean },
+  source: string | undefined,
+  options: { registry?: string; github?: boolean; dryRun?: boolean; all?: boolean },
 ): Promise<void> {
-  const config = await readConfig();
-
-  let registryName = options.registry;
-  if (!registryName) {
-    registryName = config.scopes["*"];
-  }
-  if (!registryName) {
-    exitError("No default registry configured. Use 'skills login <url>' first.");
+  if (options.all) {
+    await publishAll(options);
+    return;
   }
 
-  const reg = config.registries.find((r) => r.name === registryName);
-  if (!reg) {
-    exitError(`Registry "${registryName}" not found in config.`);
+  if (!source) {
+    exitError("Provide a source path or use --all to publish all skills in subdirectories.");
   }
 
-  if (!reg.token) {
-    exitError(`No token for registry "${registryName}". Use 'skills login' first.`);
-  }
-
-  const client = new RegistryClient(reg.url, reg.token);
+  const { client, reg } = await resolveRegistry(options.registry);
 
   const isGitHub = options.github || source.includes("github.com") || source.startsWith("github:");
 
@@ -72,6 +65,37 @@ export async function publishCommand(
     return;
   }
 
+  await publishOne(source, client, reg, options.dryRun);
+}
+
+async function resolveRegistry(registryName?: string): Promise<{ client: RegistryClient; reg: RegistryEntry }> {
+  const config = await readConfig();
+
+  if (!registryName) {
+    registryName = config.scopes["*"];
+  }
+  if (!registryName) {
+    exitError("No default registry configured. Use 'skills login <url>' first.");
+  }
+
+  const reg = config.registries.find((r) => r.name === registryName);
+  if (!reg) {
+    exitError(`Registry "${registryName}" not found in config.`);
+  }
+
+  if (!reg.token) {
+    exitError(`No token for registry "${registryName}". Use 'skills login' first.`);
+  }
+
+  return { client: new RegistryClient(reg.url, reg.token), reg };
+}
+
+async function publishOne(
+  source: string,
+  client: RegistryClient,
+  reg: RegistryEntry,
+  dryRun?: boolean,
+): Promise<{ name: string; version: string; updated: boolean }> {
   const skillDir = path.resolve(source);
   const manifestPath = path.join(skillDir, "skill.json");
 
@@ -81,18 +105,18 @@ export async function publishCommand(
     const data = JSON.parse(raw) as unknown;
     const validation = validateSkillManifest(data);
     if (!validation.valid) {
-      exitError(`Invalid skill.json:\n${validation.errors.map((e) => `  - ${e}`).join("\n")}`);
+      throw new Error(`Invalid skill.json:\n${validation.errors.map((e) => `  - ${e}`).join("\n")}`);
     }
     manifest = data as SkillManifest;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      exitError(`Cannot read skill.json in "${source}".`);
+      throw new Error(`Cannot read skill.json in "${source}".`);
     }
     throw err;
   }
 
   if (!manifest.entry) {
-    exitError("skill.json has no 'entry' field. Bundles cannot be published — only skills with an entry point.");
+    throw new Error(`${manifest.name}: no 'entry' field. Bundles cannot be published.`);
   }
 
   const entryPath = path.join(skillDir, manifest.entry);
@@ -107,18 +131,17 @@ export async function publishCommand(
     }
   }
 
-  // Package skill directory into .tar.gz
   const s = spinner();
   s.start(`Packaging ${manifest.name}@${manifest.version}...`);
   const pkg = await packSkill(skillDir);
 
-  if (options.dryRun) {
+  if (dryRun) {
     s.stop("Done (dry-run)");
     note(
       `Would publish ${manifest.name}@${manifest.version} to ${reg.name}\nPackage size: ${formatSize(pkg.size)} (${pkg.filesCount} files)\nIntegrity: ${pkg.integrity}`,
       "Dry run",
     );
-    return;
+    return { name: manifest.name, version: manifest.version, updated: false };
   }
 
   s.message(`Publishing ${manifest.name}@${manifest.version} to ${reg.name}...`);
@@ -135,4 +158,69 @@ export async function publishCommand(
   );
   log.info(`Size: ${formatSize(result.size ?? pkg.size)}`);
   log.info(`Tokens: ~${Math.ceil(content.length / 4).toLocaleString()}`);
+
+  return { name: result.name, version: result.version, updated: result.updated };
+}
+
+async function discoverSkillDirs(baseDir: string): Promise<string[]> {
+  const entries = await fs.readdir(baseDir, { withFileTypes: true });
+  const dirs: string[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+    const skillJson = path.join(baseDir, entry.name, "skill.json");
+    try {
+      await fs.access(skillJson);
+      dirs.push(path.join(baseDir, entry.name));
+    } catch {
+      // No skill.json — skip
+    }
+  }
+
+  return dirs.sort();
+}
+
+async function publishAll(
+  options: { registry?: string; dryRun?: boolean },
+): Promise<void> {
+  const baseDir = process.cwd();
+  const skillDirs = await discoverSkillDirs(baseDir);
+
+  if (skillDirs.length === 0) {
+    exitError(`No subdirectories with skill.json found in ${baseDir}`);
+  }
+
+  if (skillDirs.length > BATCH_LIMIT) {
+    exitError(`Found ${skillDirs.length} skills — exceeds limit of ${BATCH_LIMIT}. Publish in smaller batches.`);
+  }
+
+  log.info(`Found ${skillDirs.length} skills to publish`);
+
+  const { client, reg } = await resolveRegistry(options.registry);
+
+  let published = 0;
+  let updated = 0;
+  let failed = 0;
+
+  for (const dir of skillDirs) {
+    try {
+      const result = await publishOne(dir, client, reg, options.dryRun);
+      if (result.updated) {
+        updated++;
+      } else {
+        published++;
+      }
+    } catch (err) {
+      failed++;
+      log.error(`Failed: ${path.basename(dir)} — ${(err as Error).message}`);
+    }
+  }
+
+  const parts: string[] = [];
+  if (published > 0) parts.push(`${published} published`);
+  if (updated > 0) parts.push(`${updated} updated`);
+  if (failed > 0) parts.push(`${failed} failed`);
+
+  log.success(`Done: ${parts.join(", ")}`);
 }
