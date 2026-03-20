@@ -5,7 +5,6 @@ import path from "node:path";
 import { createGzip, createGunzip } from "node:zlib";
 import { pipeline } from "node:stream/promises";
 import { pack, extract } from "tar-stream";
-import type { SkillManifest } from "../../types/index.js";
 
 export interface PackageResult {
   data: Buffer;
@@ -126,17 +125,8 @@ async function collectFiles(
 }
 
 export async function packSkill(skillDir: string): Promise<PackageResult> {
-  const manifestPath = path.join(skillDir, "skill.json");
-  const manifestRaw = await fs.readFile(manifestPath, "utf-8");
-  const manifest = JSON.parse(manifestRaw) as SkillManifest;
-
   const extraIgnore = await loadSkillIgnore(skillDir);
   const files = await collectFiles(skillDir, extraIgnore);
-
-  // Ensure skill.json is included
-  if (!files.has("skill.json")) {
-    files.set("skill.json", Buffer.from(manifestRaw, "utf-8"));
-  }
 
   const tarPack = pack();
   const chunks: Buffer[] = [];

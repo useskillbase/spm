@@ -1,155 +1,71 @@
 import fs from "node:fs/promises";
-import path from "node:path";
 import { uninstallCommand } from "./uninstall.js";
 import {
   getGlobalSkillsDir,
   getProjectSkillsDir,
-  getPersonaPath,
+  getSoulMdPath,
 } from "../../core/paths.js";
 import { readConfig } from "../../core/config.js";
 import { setActivePersona } from "../../core/persona.js";
-import { validatePersonaManifest } from "../../schema/persona-schema.js";
-import type { PersonaManifest } from "../../types/index.js";
-import { log, multiselect, isCancel, cancel, exitError } from "../ui.js";
+import { log, exitError } from "../ui.js";
 import type { CommandDef } from "../command.js";
 
 export const command: CommandDef = {
   name: "remove",
-  description: "Remove a skill or skill reference from persona",
+  description: "Remove a skill or persona",
   group: "manage",
   aliases: ["rm"],
   args: [{ name: "name", required: false }],
-  options: [
-    { flags: "--from [persona]", description: "Remove skill reference from persona file(s)" },
-  ],
+  options: [],
   handler: removeCommand,
 };
 
-async function removeFromPersona(skillRef: string, personaName: string): Promise<void> {
-  const fileName = `${personaName}.person.json`;
-  const filePath = path.resolve(fileName);
-
-  let raw: string;
-  try {
-    raw = await fs.readFile(filePath, "utf-8");
-  } catch {
-    exitError(`"${fileName}" not found in current directory.`);
-  }
-
-  let persona: PersonaManifest;
-  try {
-    persona = JSON.parse(raw) as PersonaManifest;
-  } catch {
-    exitError(`Failed to parse "${fileName}".`);
-  }
-
-  const validation = validatePersonaManifest(persona);
-  if (!validation.valid) {
-    exitError(`Invalid persona manifest.\n${validation.errors.map((e) => `  ${e}`).join("\n")}`);
-  }
-
-  if (!persona.skills || !(skillRef in persona.skills)) {
-    exitError(`Skill "${skillRef}" not found in persona "${personaName}".`);
-  }
-
-  delete persona.skills[skillRef];
-
-  await fs.writeFile(filePath, JSON.stringify(persona, null, 2) + "\n", "utf-8");
-  log.success(`Removed "${skillRef}" from ${fileName}.`);
+function parseRef(ref: string): { author: string; name: string } | null {
+  const match = ref.match(/^([a-z0-9-]+)\/([a-z0-9-]+)$/);
+  if (!match) return null;
+  return { author: match[1], name: match[2] };
 }
 
-async function removePersona(name: string): Promise<void> {
+async function removePersona(ref: string): Promise<void> {
+  const parsed = parseRef(ref);
+  if (!parsed) {
+    exitError(`Invalid persona reference "${ref}". Expected author/name.`);
+  }
+
   const globalDir = getGlobalSkillsDir();
   const projectDir = getProjectSkillsDir(process.cwd());
 
-  let personaPath: string | null = null;
+  let soulPath: string | null = null;
   for (const dir of [projectDir, globalDir]) {
-    const candidate = getPersonaPath(dir, name);
+    const candidate = getSoulMdPath(dir, parsed.author, parsed.name);
     try {
       await fs.access(candidate);
-      personaPath = candidate;
+      soulPath = candidate;
       break;
     } catch {
       continue;
     }
   }
 
-  if (!personaPath) {
-    exitError(`Persona "${name}" is not installed.`);
+  if (!soulPath) {
+    exitError(`Persona "${ref}" is not installed.`);
   }
 
   const config = await readConfig();
-  if (config.active_persona === name) {
+  if (config.active_persona === ref) {
     await setActivePersona(null);
-    log.info(`Cleared active persona (was "${name}").`);
+    log.info(`Cleared active persona (was "${ref}").`);
   }
 
-  await fs.rm(personaPath);
-  log.success(`Removed persona "${name}".`);
-}
-
-async function findPersonaFiles(): Promise<string[]> {
-  const cwd = process.cwd();
-  const entries = await fs.readdir(cwd, { withFileTypes: true });
-  return entries
-    .filter((e) => e.isFile() && e.name.endsWith(".person.json"))
-    .map((e) => e.name);
-}
-
-async function removeFromPersonas(skillRef: string, fromArg?: string): Promise<void> {
-  if (fromArg) {
-    const names = fromArg.split(",").map((n) => n.trim());
-    for (const name of names) {
-      await removeFromPersona(skillRef, name);
-    }
-    return;
-  }
-
-  // Interactive: find .person.json files in cwd
-  const files = await findPersonaFiles();
-  if (files.length === 0) {
-    exitError("No .person.json files found in current directory. Specify --from <persona>.");
-  }
-
-  if (files.length === 1) {
-    const name = files[0].replace(".person.json", "");
-    await removeFromPersona(skillRef, name);
-    return;
-  }
-
-  const choices = await multiselect({
-    message: "Remove from which persona(s)?",
-    options: files.map((f) => ({
-      value: f.replace(".person.json", ""),
-      label: f,
-    })),
-    required: true,
-  });
-
-  if (isCancel(choices)) {
-    cancel("Cancelled.");
-    process.exit(0);
-  }
-
-  for (const name of choices as string[]) {
-    await removeFromPersona(skillRef, name);
-  }
+  // Remove the entire package directory (not just the SOUL.md file)
+  const pkgDir = soulPath.replace(/\/SOUL\.md$/, "");
+  await fs.rm(pkgDir, { recursive: true, force: true });
+  log.success(`Removed persona "${ref}".`);
 }
 
 export async function removeCommand(
   name: string | undefined,
-  options: { from?: string | boolean },
 ): Promise<void> {
-  // --from: remove skill ref from persona file(s)
-  if (options.from !== undefined) {
-    if (!name) {
-      exitError("Skill name is required when using --from.");
-    }
-    const fromArg = typeof options.from === "string" ? options.from : undefined;
-    await removeFromPersonas(name, fromArg);
-    return;
-  }
-
   // Default: uninstall skill (interactive if no name)
   await uninstallCommand(name);
 }

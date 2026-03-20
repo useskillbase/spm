@@ -1,13 +1,15 @@
 import Ajv from "ajv";
 
-const skillSchema = {
+/**
+ * JSON Schema for SKILL.md YAML frontmatter (v3).
+ */
+const skillFrontmatterSchema = {
   type: "object" as const,
   required: [
     "schema_version",
     "name",
     "version",
     "description",
-    "dependencies",
     "author",
     "license",
   ],
@@ -42,7 +44,7 @@ const skillSchema = {
     },
     dependencies: {
       type: "object" as const,
-      required: [] as string[],
+      nullable: true,
       additionalProperties: { type: "string" as const },
     },
     compatibility: {
@@ -54,36 +56,6 @@ const skillSchema = {
         min_context_tokens: { type: "integer" as const, minimum: 0 },
         requires: { type: "array" as const, items: { type: "string" as const } },
         models: { type: "array" as const, items: { type: "string" as const } },
-      },
-    },
-    entry: { type: "string" as const, minLength: 1, nullable: true },
-    compact_entry: { type: "string" as const, nullable: true },
-    files: {
-      type: "object" as const,
-      nullable: true,
-      required: [] as string[],
-      additionalProperties: false,
-      properties: {
-        reference: {
-          type: "array" as const,
-          items: { type: "string" as const },
-          nullable: true,
-        },
-        examples: {
-          type: "array" as const,
-          items: { type: "string" as const },
-          nullable: true,
-        },
-        assets: {
-          type: "array" as const,
-          items: { type: "string" as const },
-          nullable: true,
-        },
-        tests: {
-          type: "array" as const,
-          items: { type: "string" as const },
-          nullable: true,
-        },
       },
     },
     works_with: {
@@ -115,16 +87,34 @@ const skillSchema = {
         integrity: { type: "string" as const, nullable: true },
       },
     },
-    quality: {
+    docs: {
       type: "object" as const,
       nullable: true,
-      required: ["usage_count", "success_rate", "avg_rating", "confidence"],
       additionalProperties: false,
       properties: {
-        usage_count: { type: "integer" as const, minimum: 0 },
-        success_rate: { type: "number" as const, minimum: 0, maximum: 1 },
-        avg_rating: { type: "number" as const, minimum: 0, maximum: 5 },
-        confidence: { type: "number" as const, minimum: 0, maximum: 1 },
+        sources: {
+          type: "array" as const,
+          items: {
+            type: "object" as const,
+            required: ["type", "url"],
+            additionalProperties: false,
+            properties: {
+              type: { type: "string" as const, enum: ["url", "llms-txt", "github"] },
+              url: { type: "string" as const, minLength: 1 },
+              scope: { type: "string" as const, enum: ["crawl", "page", "sitemap"], nullable: true },
+              depth: { type: "integer" as const, minimum: 0, maximum: 5, nullable: true },
+              include: { type: "array" as const, items: { type: "string" as const }, nullable: true },
+              exclude: { type: "array" as const, items: { type: "string" as const }, nullable: true },
+              label: { type: "string" as const, nullable: true },
+            },
+          },
+        },
+        delivery: { type: "string" as const, enum: ["local", "remote", "auto"], nullable: true },
+        priority_pages: {
+          type: "array" as const,
+          items: { type: "string" as const },
+          nullable: true,
+        },
       },
     },
     author: { type: "string" as const, minLength: 1 },
@@ -133,22 +123,76 @@ const skillSchema = {
   },
 };
 
+/**
+ * JSON Schema for legacy skill.json (v1/v2). Used by migration.
+ */
+const legacySkillSchema = {
+  type: "object" as const,
+  required: [
+    "schema_version",
+    "name",
+    "version",
+    "description",
+    "dependencies",
+    "author",
+    "license",
+  ],
+  properties: {
+    schema_version: { type: "integer" as const, minimum: 1 },
+    name: { type: "string" as const },
+    version: { type: "string" as const },
+    description: { type: "string" as const },
+    dependencies: { type: "object" as const },
+    author: { type: "string" as const },
+    license: { type: "string" as const },
+    entry: { type: "string" as const },
+    compact_entry: { type: "string" as const },
+    trigger: { type: "object" as const },
+    language: { type: "string" as const },
+    compatibility: { type: "object" as const },
+    files: { type: "object" as const },
+    works_with: { type: "array" as const },
+    security: { type: "object" as const },
+    quality: { type: "object" as const },
+    repository: { type: "string" as const },
+    docs: { type: "object" as const },
+  },
+};
+
 const ajv = new Ajv.default({ allErrors: true });
-const validateFn = ajv.compile(skillSchema);
+const validateFrontmatter = ajv.compile(skillFrontmatterSchema);
+const validateLegacy = ajv.compile(legacySkillSchema);
 
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
 }
 
-export function validateSkillManifest(data: unknown): ValidationResult {
-  const valid = validateFn(data);
+export function validateSkillFrontmatter(data: unknown): ValidationResult {
+  const valid = validateFrontmatter(data);
   if (valid) {
     return { valid: true, errors: [] };
   }
-  const errors = (validateFn.errors ?? []).map((e: { instancePath?: string; message?: string }) => {
-    const path = e.instancePath || "/";
-    return `${path}: ${e.message}`;
-  });
+  const errors = (validateFrontmatter.errors ?? []).map(
+    (e: { instancePath?: string; message?: string }) => {
+      const path = e.instancePath || "/";
+      return `${path}: ${e.message}`;
+    },
+  );
+  return { valid: false, errors };
+}
+
+/** @deprecated Validate legacy skill.json. Use validateSkillFrontmatter for v3. */
+export function validateSkillManifest(data: unknown): ValidationResult {
+  const valid = validateLegacy(data);
+  if (valid) {
+    return { valid: true, errors: [] };
+  }
+  const errors = (validateLegacy.errors ?? []).map(
+    (e: { instancePath?: string; message?: string }) => {
+      const path = e.instancePath || "/";
+      return `${path}: ${e.message}`;
+    },
+  );
   return { valid: false, errors };
 }

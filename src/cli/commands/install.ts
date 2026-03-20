@@ -1,6 +1,6 @@
 import { readConfig } from "../../core/config.js";
 import { getClientForSkill } from "../../core/registry-client.js";
-import { readManifest } from "../../core/manifest.js";
+import { readWorkspaceManifest } from "../../core/manifest.js";
 import { writeIndex } from "../../core/indexer.js";
 import { writeLock } from "../../core/lock.js";
 import { log, exitError } from "../ui.js";
@@ -9,7 +9,7 @@ import type { CommandDef } from "../command.js";
 
 export const command: CommandDef = {
   name: "install",
-  description: "Install all skill dependencies from skill.json",
+  description: "Install all dependencies from skillbase.json",
   group: "manage",
   aliases: ["i"],
   options: [
@@ -24,44 +24,65 @@ function parseSkillRef(ref: string): { author: string; name: string } | null {
   return { author: match[1], name: match[2] };
 }
 
-export async function installAllCommand(
-  options: { global?: boolean },
+async function installRefs(
+  refs: [string, string][],
+  skillsDir: string,
+  label: string,
 ): Promise<void> {
-  const { skillsDir } = await resolveSkillsDir(options.global);
-  const cwd = process.cwd();
-  const manifest = await readManifest(cwd);
-
-  if (!manifest) {
-    exitError("No skill.json found. Run 'spm init --project' first.");
-  }
-
-  const entries = Object.entries(manifest.dependencies);
-  if (entries.length === 0) {
-    log.info("No dependencies in skill.json.");
-    return;
-  }
+  if (refs.length === 0) return;
 
   const config = await readConfig();
+  log.step(`Installing ${refs.length} ${label}(s) from skillbase.json...`);
 
-  log.step(`Installing ${entries.length} skill(s) from skill.json...`);
-  for (const [skillRef] of entries) {
-    const parsed = parseSkillRef(skillRef);
+  for (const [ref] of refs) {
+    const parsed = parseSkillRef(ref);
     if (!parsed) {
-      log.warning(`Skipping invalid ref: ${skillRef}`);
+      log.warning(`Skipping invalid ref: ${ref}`);
       continue;
     }
 
-    const client = getClientForSkill(config, skillRef);
+    const client = getClientForSkill(config, ref);
     if (!client) {
-      log.warning(`No registry for ${skillRef}, skipping.`);
+      log.warning(`No registry for ${ref}, skipping.`);
       continue;
     }
 
     await installSingleFromRegistry(parsed.author, parsed.name, skillsDir, client);
   }
+}
+
+export async function installAllCommand(
+  options: { global?: boolean },
+): Promise<void> {
+  const { skillsDir } = await resolveSkillsDir(options.global);
+  const cwd = process.cwd();
+  const manifest = await readWorkspaceManifest(cwd);
+
+  if (!manifest) {
+    exitError("No skillbase.json found. Run 'spm init --project' first.");
+  }
+
+  const skillEntries = Object.entries(manifest.skills ?? {});
+  const personaEntries = Object.entries(manifest.personas ?? {});
+
+  if (skillEntries.length === 0 && personaEntries.length === 0) {
+    log.info("No dependencies in skillbase.json.");
+    return;
+  }
+
+  await installRefs(skillEntries, skillsDir, "skill");
+  await installRefs(personaEntries, skillsDir, "persona");
 
   const index = await writeIndex(skillsDir);
   const lock = await writeLock(skillsDir);
 
-  log.success(`Done. ${index.skills.length} skill(s) indexed, ${lock.total_tokens_estimate} tokens total`);
+  log.success(`Done. ${index.skills.length} package(s) indexed, ${lock.total_tokens_estimate} tokens total`);
+
+  // Auto-start status server (non-fatal)
+  try {
+    const { ensureStatusServer } = await import("../../core/status-server.js");
+    await ensureStatusServer();
+  } catch {
+    // Status server is optional
+  }
 }

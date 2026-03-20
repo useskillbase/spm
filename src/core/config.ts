@@ -16,6 +16,7 @@ const DEFAULT_CONFIG: SkillsConfig = {
     skill_install: true,
     persona_load: true,
     persona_list: true,
+    persona_install: true,
     skill_exec: true,
   },
   search: {
@@ -56,6 +57,7 @@ export async function writeConfig(
   skillsDir?: string,
 ): Promise<void> {
   const dir = skillsDir ?? getGlobalSkillsDir();
+  await fs.mkdir(dir, { recursive: true });
   const configPath = getConfigPath(dir);
   await fs.writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
 }

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { SkillManifest } from "../../types/index.js";
+import matter from "gray-matter";
 import { log, spinner, note, cancel, isCancel, text, exitError } from "../ui.js";
 import type { CommandDef } from "../command.js";
 
@@ -34,7 +34,7 @@ interface SharedMeta {
 const PROMPT_EXTENSIONS = new Set([".md", ".txt", ".prompt"]);
 
 // XML tags used in the structured skill template
-const STRUCTURE_MARKERS = ["<role>", "<context>", "<instructions>", "<examples>", "<guidelines>", "<verification>"];
+const STRUCTURE_MARKERS = ["<context>", "<instructions>", "<examples>", "<guidelines>", "<verification>"];
 
 function hasStructuredFormat(content: string): boolean {
   return STRUCTURE_MARKERS.some((marker) => content.includes(marker));
@@ -46,14 +46,11 @@ function wrapInStructuredTemplate(name: string, rawContent: string): string {
     return rawContent;
   }
 
-  return `<role>
-TODO: one-sentence role definition that sets expertise and tone.
-</role>
-
-# ${name}
+  return `# ${name}
 
 <context>
-TODO: explain why this skill exists — what problem it solves and what the user is trying to achieve.
+TODO: explain what this skill does — what problem it solves, what expertise it brings,
+and what the user is trying to achieve.
 </context>
 
 <instructions>
@@ -106,33 +103,26 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
-function buildManifest(
+function buildFrontmatter(
   skillName: string,
   meta: SharedMeta,
-): SkillManifest {
+): Record<string, unknown> {
   return {
-    schema_version: 1,
+    schema_version: 3,
     name: skillName,
     version: "1.0.0",
-    language: "en",
+    author: meta.author,
+    license: meta.license,
     description: `TODO: describe what ${skillName} does`,
+    language: "en",
     trigger: {
       description: `TODO: describe when to use ${skillName}`,
       tags: [skillName],
       priority: 50,
     },
-    dependencies: {},
-    compatibility: {
-      min_context_tokens: 1000,
-      requires: [],
-      models: [],
-    },
-    entry: "SKILL.md",
     security: {
       permissions: [],
     },
-    author: meta.author,
-    license: meta.license,
   };
 }
 
@@ -224,18 +214,13 @@ async function convertFile(
   }
 
   const rawContent = await fs.readFile(filePath, "utf-8");
-  const manifest = buildManifest(skillName, meta);
+  const frontmatter = buildFrontmatter(skillName, meta);
+  const body = wrapInStructuredTemplate(skillName, rawContent);
 
   await fs.mkdir(skillDir, { recursive: true });
 
-  await fs.writeFile(
-    path.join(skillDir, "skill.json"),
-    JSON.stringify(manifest, null, 2),
-    "utf-8",
-  );
-
-  const content = wrapInStructuredTemplate(skillName, rawContent);
-  await fs.writeFile(path.join(skillDir, "SKILL.md"), content, "utf-8");
+  const skillMd = matter.stringify(body, frontmatter);
+  await fs.writeFile(path.join(skillDir, "SKILL.md"), skillMd, "utf-8");
 
   return skillName;
 }
@@ -284,7 +269,7 @@ export async function convertCommand(
   }
 
   note(
-    `1. Review and edit skill.json in each directory (description, trigger, tags)\n2. skills validate ./${created[0]}\n3. skills install ./${created[0]}`,
+    `1. Edit SKILL.md frontmatter in each directory (description, trigger, tags)\n2. spm validate ./${created[0]}\n3. spm add ./${created[0]}`,
     "Next steps",
   );
 }

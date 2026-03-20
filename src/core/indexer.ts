@@ -1,32 +1,96 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getInstalledDir, getIndexPath } from "./paths.js";
-import { validateSkillManifest } from "../schema/skill-schema.js";
-import type { SkillManifest, SkillIndex, IndexSkillEntry } from "../types/index.js";
+import { getInstalledDir, getIndexPath, getGlobalSkillsDir } from "./paths.js";
+import { parseSkill } from "./skill-parser.js";
+import { parseSoul } from "./persona-parser.js";
+import type { SkillIndex, IndexSkillEntry } from "../types/index.js";
 
-async function estimateTokens(filePath: string): Promise<number> {
+export interface InstalledMap {
+  skills: Record<string, string>;
+  personas: Record<string, string>;
+}
+
+function estimateTokens(content: string): number {
+  return Math.ceil(content.length / 4);
+}
+
+async function readSkillEntry(
+  skillDir: string,
+  author: string,
+  skillName: string,
+): Promise<IndexSkillEntry | null> {
+  const skillMdPath = path.join(skillDir, "SKILL.md");
+
   try {
-    const content = await fs.readFile(filePath, "utf-8");
-    // Rough estimate: ~4 chars per token for English text
-    return Math.ceil(content.length / 4);
+    await fs.access(skillMdPath);
   } catch {
-    return 0;
+    return null;
+  }
+
+  try {
+    const parsed = parseSkill(await fs.readFile(skillMdPath, "utf-8"));
+    const { frontmatter, body } = parsed;
+
+    if (!frontmatter.trigger) return null;
+
+    const tokensEstimate = estimateTokens(body);
+
+    const entry: IndexSkillEntry = {
+      name: `${author}/${frontmatter.name}`,
+      v: frontmatter.version,
+      trigger: frontmatter.trigger.description,
+      tags: frontmatter.trigger.tags,
+      priority: frontmatter.trigger.priority,
+      entry: skillMdPath,
+      tokens_estimate: tokensEstimate,
+      package_type: "skill",
+    };
+
+    if (frontmatter.trigger.file_patterns) {
+      entry.file_patterns = frontmatter.trigger.file_patterns;
+    }
+
+    return entry;
+  } catch (err) {
+    console.error(`Failed to parse skill in ${skillDir}:`, err);
+    return null;
   }
 }
 
-async function readSkillManifest(skillDir: string): Promise<SkillManifest | null> {
-  const manifestPath = path.join(skillDir, "skill.json");
+async function readPersonaEntry(
+  pkgDir: string,
+  author: string,
+  name: string,
+): Promise<IndexSkillEntry | null> {
+  const soulMdPath = path.join(pkgDir, "SOUL.md");
+
   try {
-    const raw = await fs.readFile(manifestPath, "utf-8");
-    const data = JSON.parse(raw) as unknown;
-    const result = validateSkillManifest(data);
-    if (!result.valid) {
-      console.error(`Invalid skill.json in ${skillDir}:`, result.errors);
-      return null;
-    }
-    return data as SkillManifest;
+    await fs.access(soulMdPath);
+  } catch {
+    return null;
+  }
+
+  try {
+    const raw = await fs.readFile(soulMdPath, "utf-8");
+    const { frontmatter, body } = parseSoul(raw);
+    const trigger = frontmatter.skillbase?.trigger;
+
+    const tokensEstimate = estimateTokens(body);
+
+    const entry: IndexSkillEntry = {
+      name: `${author}/${frontmatter.name}`,
+      v: frontmatter.version,
+      trigger: trigger?.description ?? frontmatter.description,
+      tags: trigger?.tags ?? [],
+      priority: trigger?.priority ?? 50,
+      entry: soulMdPath,
+      tokens_estimate: tokensEstimate,
+      package_type: "persona",
+    };
+
+    return entry;
   } catch (err) {
-    console.error(`Failed to read skill.json in ${skillDir}:`, err);
+    console.error(`Failed to parse persona in ${pkgDir}:`, err);
     return null;
   }
 }
@@ -47,43 +111,26 @@ export async function buildIndex(skillsDir: string): Promise<SkillIndex> {
     const stat = await fs.stat(authorDir);
     if (!stat.isDirectory()) continue;
 
-    const skillNames = await fs.readdir(authorDir);
-    for (const skillName of skillNames) {
-      const skillDir = path.join(authorDir, skillName);
-      const skillStat = await fs.stat(skillDir);
-      if (!skillStat.isDirectory()) continue;
+    const pkgNames = await fs.readdir(authorDir);
+    for (const pkgName of pkgNames) {
+      const pkgDir = path.join(authorDir, pkgName);
+      const pkgStat = await fs.stat(pkgDir);
+      if (!pkgStat.isDirectory()) continue;
 
-      const manifest = await readSkillManifest(skillDir);
-      if (!manifest) continue;
-
-      // Skip bundles (no entry or trigger = not a loadable skill)
-      if (!manifest.entry || !manifest.trigger) continue;
-
-      const entryPath = path.join(skillDir, manifest.entry);
-      const tokensEstimate = await estimateTokens(entryPath);
-
-      const entry: IndexSkillEntry = {
-        name: `${author}/${manifest.name}`,
-        v: manifest.version,
-        trigger: manifest.trigger.description,
-        tags: manifest.trigger.tags,
-        priority: manifest.trigger.priority,
-        entry: entryPath,
-        tokens_estimate: tokensEstimate,
-      };
-
-      if (manifest.trigger.file_patterns) {
-        entry.file_patterns = manifest.trigger.file_patterns;
-      }
-      if (manifest.compact_entry) {
-        entry.compact_entry = path.join(skillDir, manifest.compact_entry);
+      // Try skill first, then persona
+      const skillEntry = await readSkillEntry(pkgDir, author, pkgName);
+      if (skillEntry) {
+        index.skills.push(skillEntry);
+        continue;
       }
 
-      index.skills.push(entry);
+      const personaEntry = await readPersonaEntry(pkgDir, author, pkgName);
+      if (personaEntry) {
+        index.skills.push(personaEntry);
+      }
     }
   }
 
-  // Sort by priority descending
   index.skills.sort((a, b) => b.priority - a.priority);
   return index;
 }
@@ -94,4 +141,22 @@ export async function writeIndex(skillsDir: string): Promise<SkillIndex> {
   await fs.mkdir(skillsDir, { recursive: true });
   await fs.writeFile(indexPath, JSON.stringify(index, null, 2), "utf-8");
   return index;
+}
+
+export async function getInstalledMap(): Promise<InstalledMap> {
+  const skillsDir = getGlobalSkillsDir();
+  const index = await buildIndex(skillsDir);
+
+  const skills: Record<string, string> = {};
+  const personas: Record<string, string> = {};
+
+  for (const entry of index.skills) {
+    if (entry.package_type === "persona") {
+      personas[`@${entry.name}`] = entry.v;
+    } else {
+      skills[`@${entry.name}`] = entry.v;
+    }
+  }
+
+  return { skills, personas };
 }

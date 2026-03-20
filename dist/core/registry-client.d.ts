@@ -13,6 +13,7 @@ export interface DownloadResult {
     integrity: string | null;
     tokens_estimate: number;
     download_url: string;
+    package_type?: "skill" | "persona";
 }
 export declare class RegistryClient {
     private readonly url;
@@ -20,7 +21,7 @@ export declare class RegistryClient {
     constructor(url: string, token?: string | undefined);
     private headers;
     private skillUrl;
-    search(query?: string, tag?: string, page?: number): Promise<RegistrySearchResult>;
+    search(query?: string, tag?: string, page?: number, type?: "skill" | "persona"): Promise<RegistrySearchResult>;
     getSkill(author: string, name: string): Promise<RemoteSkillEntry | null>;
     getContent(author: string, name: string, version?: string): Promise<{
         name: string;
@@ -45,6 +46,7 @@ export declare class RegistryClient {
         manifest: SkillManifest;
         content: string;
         compact_content?: string;
+        filename?: string;
     }, archive: Buffer): Promise<PublishResult>;
     getDownloadUrl(author: string, name: string, version?: string): Promise<DownloadResult>;
     getVersions(author: string, name: string): Promise<{

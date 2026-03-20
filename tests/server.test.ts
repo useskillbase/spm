@@ -17,8 +17,8 @@ beforeEach(async () => {
   // Point global skills dir to tmpDir
   process.env.HOME = tmpDir;
   process.chdir(tmpDir);
-  // Create .skills structure under tmpDir (simulating home dir)
-  const skillsDir = `${tmpDir}/.skills`;
+  // Create .spm structure under tmpDir (simulating home dir)
+  const skillsDir = `${tmpDir}/.spm`;
   await fs.mkdir(`${skillsDir}/installed`, { recursive: true });
   await writeConfig(getDefaultConfig(), skillsDir);
 });
@@ -30,7 +30,7 @@ afterEach(async () => {
 });
 
 function getSkillsDir(): string {
-  return `${tmpDir}/.skills`;
+  return `${tmpDir}/.spm`;
 }
 
 async function setupSkill(): Promise<void> {

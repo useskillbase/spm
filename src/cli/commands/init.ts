@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { getGlobalSkillsDir, getProjectSkillsDir, getInstalledDir, getManifestPath } from "../../core/paths.js";
+import { getGlobalSkillsDir, getProjectSkillsDir, getInstalledDir, getWorkspaceManifestPath } from "../../core/paths.js";
 import { getDefaultConfig } from "../../core/config.js";
-import { getDefaultManifest } from "../../core/manifest.js";
+import { getDefaultWorkspaceManifest } from "../../core/manifest.js";
 import { log, note } from "../ui.js";
 import type { CommandDef } from "../command.js";
 
@@ -11,7 +11,7 @@ export const command: CommandDef = {
   description: "Initialize skills directory",
   group: "system",
   options: [
-    { flags: "--project", description: "Initialize in current project (.skills/) instead of global (~/.skills/)" },
+    { flags: "--project", description: "Initialize in current project (.spm/) instead of global (~/.spm/)" },
   ],
   handler: initCommand,
 };
@@ -52,17 +52,17 @@ export async function initCommand(options: { project?: boolean }): Promise<void>
     const dir = getProjectSkillsDir(cwd);
     await createStructure(dir, "project");
 
-    // Create skill.json in project root if it doesn't exist
-    const manifestPath = getManifestPath(cwd);
+    // Create skillbase.json in project root if it doesn't exist
+    const manifestPath = getWorkspaceManifestPath(cwd);
     try {
       await fs.access(manifestPath);
     } catch {
       await fs.writeFile(
         manifestPath,
-        JSON.stringify(getDefaultManifest(), null, 2) + "\n",
+        JSON.stringify(getDefaultWorkspaceManifest(), null, 2) + "\n",
         "utf-8",
       );
-      log.info("skill.json — project dependencies");
+      log.info("skillbase.json — project dependencies");
     }
   } else {
     const dir = getGlobalSkillsDir();

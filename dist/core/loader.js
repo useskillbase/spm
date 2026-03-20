@@ -1,28 +1,14 @@
 import fs from "node:fs/promises";
-import path from "node:path";
+import { parseSkill } from "./skill-parser.js";
 import { runLoadHooks } from "./plugins/index.js";
-export async function loadSkill(entry, compact = false) {
-    const entryPath = compact && entry.compact_entry ? entry.compact_entry : entry.entry;
-    const raw = await fs.readFile(entryPath, "utf-8");
-    // Read skill.json for extra metadata
-    const skillDir = path.dirname(entryPath);
-    const manifestPath = path.join(skillDir, "skill.json");
-    let permissions = [];
-    let fileScope;
-    let worksWithList = undefined;
-    try {
-        const manifestRaw = await fs.readFile(manifestPath, "utf-8");
-        const manifest = JSON.parse(manifestRaw);
-        permissions = manifest.security?.permissions ?? [];
-        fileScope = manifest.security?.file_scope;
-        worksWithList = manifest.works_with;
-    }
-    catch {
-        // Metadata unavailable — continue with defaults
-    }
-    // Run load plugins (e.g. spotlighting)
+export async function loadSkill(entry, _compact = false) {
+    const raw = await fs.readFile(entry.entry, "utf-8");
+    const parsed = parseSkill(raw);
+    const permissions = parsed.frontmatter.security?.permissions ?? [];
+    const fileScope = parsed.frontmatter.security?.file_scope;
+    const worksWithList = parsed.frontmatter.works_with;
     const content = await runLoadHooks({
-        content: raw,
+        content: parsed.body,
         name: entry.name,
         version: entry.v,
         permissions,

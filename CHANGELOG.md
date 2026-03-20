@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`skillbase.json` workspace manifest** — new project manifest format with `schema_version`, `skills`, `personas`, `registry` fields
+- **Unified `SKILL.md` format** — YAML frontmatter + markdown body as the only skill format; full AJV schema validation
+- **`SOUL.md` persona format** — YAML frontmatter with `skillbase:` namespace (trigger, skills, constraints, avatar, voice, animation, MCP servers, settings) + free-form markdown body
+- **Inline package management from website** — install, update, and remove skills directly from the sidebar without CLI
+  - `GET /status` returns installed packages map (skills + personas with versions) and `has_token` on connections
+  - `POST /action` starts install/update/remove tasks with async execution and step callbacks
+  - `GET /action/:id` polls task progress (status, step label, error)
+  - `POST /shutdown` graceful server stop from browser Disconnect button
+  - Max 3 concurrent tasks, 5-minute task cleanup
+- **`spm://start` protocol action** — starts status server from browser Connect button without OS confirmation dialog
+- **`Sec-Fetch-Site` security** — mutation endpoints (`/action`, `/shutdown`) validate browser `Sec-Fetch-Site` header to block cross-origin attacks from unauthorized websites
+- **`spm://` protocol handler** — custom URL scheme for one-click install, activate, connect, and start from the web
+  - `spm protocol-handle <url>` — parses and dispatches protocol URLs with rate limiting and nonce verification
+  - `spm protocol register` / `unregister` — OS-specific protocol registration (macOS via osacompile applet, Linux, Windows)
+  - Auto-registers on `npm install -g`
+- **Remote OpenClaw connection** — `spm connect openclaw --remote <url>`, connection management, secure token storage via OS keychain
+- **Local status server** — `spm status-server start/stop/status`, HTTP on `127.0.0.1:57321` with CORS, auto-daemon on connect
+- **`spm migrate` command** — `spm migrate detect` / `spm migrate run` for automatic v1/v2→v3 format migration
+
+### Changed
+
+- **Removed legacy `skill.json` support** — all CLI commands (`publish`, `validate`, `link`, `info`, `convert`) now read SKILL.md exclusively; indexer, loader, lock builder no longer fall back to skill.json
+- **`spm convert` outputs SKILL.md with frontmatter** — no longer creates separate skill.json; uses `schema_version: 3`
+- **`spm publish` reads SKILL.md** — sends raw SKILL.md content as separate FormData field; discovers skill dirs by SKILL.md presence
+- **`spm create` template updated** — `<role>` section replaced with `<context>` explaining what the skill does
+- **macOS protocol handler** — uses compiled AppleScript applet (osacompile) instead of shell script, correctly receives URLs via Apple Events
+- **`spm connect` auto-starts status server** — `ensureStatusServer()` called after client connection
+
+### Fixed
+
+- **`writeConfig` crash on fresh install** — now creates `~/.spm/` directory before writing config.json
+- **`spm login` scope corruption** — `saveTokenToConfig` no longer renames existing registry entries; preserves original name and scopes
+- **`spm publish` silent failures** — spinner stops before error display; errors shown with proper formatting
+- **CLI hint typos** — all references to `skills publish/validate/install/registry` corrected to `spm`
+- **Build missing execute permission** — `npm run build` now includes `chmod +x dist/cli/index.js`
+
 ## [0.4.4] - 2026-03-17
 
 ## [0.4.3] - 2026-03-17
@@ -79,7 +117,7 @@
 
 - **Persona system** — `.person.json` format for defining AI agent personalities with character traits (role, tone, guidelines, instructions), model settings, and skill dependencies
 - **MCP tools**: `persona_list`, `persona_load` — list available personas and activate them in chat
-- **Persona storage**: `~/.skills/personas/` (global) and `.skills/personas/` (project-level, overrides global)
+- **Persona storage**: `~/.spm/personas/` (global) and `.spm/personas/` (project-level, overrides global)
 - **Active persona injection** — active persona's character instructions are injected into MCP server instructions at startup
 - **JSON Schema validation** for `.person.json` manifests
 - **`spm link <path>`** — symlink a local skill directory for development (like `yarn link`)
@@ -105,7 +143,7 @@
 
 ### 0.1.0 — Initial release
 
-- **Core engine**: skill indexer, loader, registry with global (`~/.skills/`) and project-level (`.skills/`) support
+- **Core engine**: skill indexer, loader, registry with global (`~/.spm/`) and project-level (`.spm/`) support
 - **MCP server** (stdio) with tools: `skill_list`, `skill_load`, `skill_context`, `skill_search`, `skill_feedback`, `skill_install`
 - **CLI** (`spm`): full command set — init, create, validate, install, uninstall, list, info, reindex, search, publish, update, login, rate, stats, convert, connect, disconnect, serve
 - **Feedback & confidence system**, remote registry support, GitHub integration, S3 storage

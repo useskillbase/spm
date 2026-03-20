@@ -2,9 +2,16 @@ import fs from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import path from "node:path";
 import { parse, modify, applyEdits, type ModificationOptions } from "jsonc-parser";
-import { log, exitError } from "../ui.js";
+import { log, exitError, password, isCancel } from "../ui.js";
 import type { CommandDef } from "../command.js";
-import { getClient, getAllClients, getAllClientKeys } from "../../clients/index.js";
+import { getClient, getAllClients } from "../../clients/index.js";
+import {
+  addConnection,
+  removeConnection,
+  listConnections,
+  setDefault,
+  testConnection,
+} from "../../core/connections.js";
 
 export const commands: CommandDef[] = [
   {
@@ -12,6 +19,12 @@ export const commands: CommandDef[] = [
     description: "Connect skills to an AI client",
     group: "system",
     args: [{ name: "client", required: true }],
+    options: [
+      { flags: "--remote <url>", description: "Remote OpenClaw server URL" },
+      { flags: "--name <name>", description: "Connection name (for remote)" },
+      { flags: "--label <label>", description: "Display label (for remote)" },
+      { flags: "--token <token>", description: "Auth token (for remote, interactive if omitted)" },
+    ],
     handler: connectCommand,
   },
   {
@@ -20,6 +33,40 @@ export const commands: CommandDef[] = [
     group: "system",
     args: [{ name: "client", required: true }],
     handler: disconnectCommand,
+  },
+  {
+    name: "connections",
+    description: "Manage remote connections",
+    group: "system",
+    subcommands: [
+      {
+        name: "list",
+        description: "List all remote connections",
+        group: "system",
+        handler: connectionsListCommand,
+      },
+      {
+        name: "test",
+        description: "Test a remote connection",
+        group: "system",
+        args: [{ name: "name", required: true }],
+        handler: connectionsTestCommand,
+      },
+      {
+        name: "default",
+        description: "Set default connection",
+        group: "system",
+        args: [{ name: "name", required: true }],
+        handler: connectionsDefaultCommand,
+      },
+      {
+        name: "remove",
+        description: "Remove a remote connection",
+        group: "system",
+        args: [{ name: "name", required: true }],
+        handler: connectionsRemoveCommand,
+      },
+    ],
   },
 ];
 
@@ -72,7 +119,17 @@ function supportedClientsList(): string {
 
 export async function connectCommand(
   client: string,
+  options: { remote?: string; name?: string; label?: string; token?: string },
 ): Promise<void> {
+  // Remote OpenClaw connection
+  if (options.remote) {
+    if (client !== "openclaw") {
+      exitError("--remote flag is only supported for openclaw connections");
+    }
+    await connectRemoteOpenClaw(options.remote, options.name, options.label, options.token);
+    return;
+  }
+
   const def = getClient(client);
 
   if (!def) {
@@ -101,6 +158,56 @@ export async function connectCommand(
   log.success(`Connected to ${def.name}.`);
   log.message(`Config: ${def.configPath}`);
   log.info(`Restart ${def.name} to activate.`);
+
+  // Auto-start status server for website integration
+  try {
+    const { ensureStatusServer } = await import("../../core/status-server.js");
+    await ensureStatusServer();
+  } catch { /* non-fatal */ }
+}
+
+async function connectRemoteOpenClaw(
+  url: string,
+  name?: string,
+  label?: string,
+  token?: string,
+): Promise<void> {
+  const connName = name ?? new URL(url).hostname.split(".")[0];
+  const connLabel = label ?? connName;
+
+  let connToken = token;
+  if (!connToken) {
+    const input = await password({
+      message: "Enter authentication token:",
+    });
+    if (isCancel(input) || !input) {
+      exitError("Token is required for remote connection");
+    }
+    connToken = input as string;
+  }
+
+  const { secure } = await addConnection(connName, {
+    type: "openclaw",
+    url,
+    token: connToken,
+    label: connLabel,
+  });
+
+  if (!secure) {
+    log.warning("Token stored in plaintext (OS keychain not available)");
+  }
+
+  log.success(`Connection "${connName}" added.`);
+
+  // Test the connection
+  log.info("Testing connection...");
+  const result = await testConnection(connName);
+  if (result.ok) {
+    log.success("Connection verified.");
+  } else {
+    log.warning(`Connection test failed: ${result.error}`);
+    log.info("The connection was saved. You can test again with: spm connections test " + connName);
+  }
 }
 
 export async function disconnectCommand(
@@ -128,4 +235,52 @@ export async function disconnectCommand(
   log.success(`Disconnected from ${def.name}.`);
   log.message(`Config: ${def.configPath}`);
   log.info(`Restart ${def.name} to apply.`);
+}
+
+// -- Connections subcommands --
+
+async function connectionsListCommand(): Promise<void> {
+  const connections = await listConnections();
+
+  if (connections.length === 0) {
+    log.info("No remote connections configured.");
+    log.message("Add one with: spm connect openclaw --remote <url>");
+    return;
+  }
+
+  for (const conn of connections) {
+    const defaultMark = conn.isDefault ? " (default)" : "";
+    const verified = conn.verified_at
+      ? ` — verified ${new Date(conn.verified_at).toLocaleDateString()}`
+      : "";
+    log.info(`${conn.name}${defaultMark} — ${conn.type} — ${conn.label}${verified}`);
+  }
+}
+
+async function connectionsTestCommand(name: string): Promise<void> {
+  log.info(`Testing connection "${name}"...`);
+  const result = await testConnection(name);
+  if (result.ok) {
+    log.success("Connection OK.");
+  } else {
+    exitError(`Connection failed: ${result.error}`);
+  }
+}
+
+async function connectionsDefaultCommand(name: string): Promise<void> {
+  try {
+    await setDefault(name);
+    log.success(`Default connection set to "${name}".`);
+  } catch (err) {
+    exitError(err instanceof Error ? err.message : String(err));
+  }
+}
+
+async function connectionsRemoveCommand(name: string): Promise<void> {
+  const removed = await removeConnection(name);
+  if (removed) {
+    log.success(`Connection "${name}" removed.`);
+  } else {
+    exitError(`Connection "${name}" not found.`);
+  }
 }

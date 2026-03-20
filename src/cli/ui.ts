@@ -1,6 +1,6 @@
-import { intro, outro, spinner, note, cancel, isCancel, text, select, multiselect, confirm } from "@clack/prompts";
+import { intro, outro, spinner, note, cancel, isCancel, text, select, multiselect, confirm, password } from "@clack/prompts";
 
-export { intro, outro, spinner, note, cancel, isCancel, text, select, multiselect, confirm };
+export { intro, outro, spinner, note, cancel, isCancel, text, select, multiselect, confirm, password };
 export { log } from "./logger.js";
 
 /** Styled error message + process.exit(1) */

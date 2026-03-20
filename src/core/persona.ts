@@ -3,45 +3,54 @@ import path from "node:path";
 import {
   getGlobalSkillsDir,
   getProjectSkillsDir,
-  getPersonasDir,
-  getPersonaPath,
+  getInstalledDir,
+  getSoulMdPath,
 } from "./paths.js";
 import { readConfig, writeConfig } from "./config.js";
-import { validatePersonaManifest } from "../schema/persona-schema.js";
-import type {
-  PersonaManifest,
-  PersonaCharacter,
-  PersonaSettings,
-} from "../types/index.js";
+import { parseSoul, serializeSoul } from "./persona-parser.js";
+import { validateSoulFrontmatter } from "../schema/persona-schema.js";
+import type { ParsedSoul } from "../types/index.js";
 
 export interface PersonaListEntry {
   name: string;
+  author: string;
   version: string;
   description: string;
   dependencies_count: number;
 }
 
-async function scanPersonasDir(
+async function scanPersonas(
   skillsDir: string,
-): Promise<PersonaManifest[]> {
-  const dir = getPersonasDir(skillsDir);
+): Promise<ParsedSoul[]> {
+  const installedDir = getInstalledDir(skillsDir);
+  const personas: ParsedSoul[] = [];
+
   try {
-    const files = await fs.readdir(dir);
-    const personas: PersonaManifest[] = [];
-    for (const file of files) {
-      if (!file.endsWith(".person.json")) continue;
-      try {
-        const raw = await fs.readFile(path.join(dir, file), "utf-8");
-        const data = JSON.parse(raw) as PersonaManifest;
-        personas.push(data);
-      } catch {
-        // skip invalid files
+    const authorDirs = await fs.readdir(installedDir, { withFileTypes: true });
+
+    for (const authorEntry of authorDirs) {
+      if (!authorEntry.isDirectory()) continue;
+
+      const authorPath = path.join(installedDir, authorEntry.name);
+      const packageDirs = await fs.readdir(authorPath, { withFileTypes: true });
+
+      for (const pkgEntry of packageDirs) {
+        if (!pkgEntry.isDirectory()) continue;
+
+        const soulPath = path.join(authorPath, pkgEntry.name, "SOUL.md");
+        try {
+          const raw = await fs.readFile(soulPath, "utf-8");
+          personas.push(parseSoul(raw));
+        } catch {
+          // Not a persona or invalid — skip
+        }
       }
     }
-    return personas;
   } catch {
-    return [];
+    // installed dir doesn't exist
   }
+
+  return personas;
 }
 
 export async function listPersonas(
@@ -52,57 +61,81 @@ export async function listPersonas(
   const projectDir = getProjectSkillsDir(workdir);
 
   const [globalPersonas, projectPersonas] = await Promise.all([
-    scanPersonasDir(globalDir),
-    scanPersonasDir(projectDir),
+    scanPersonas(globalDir),
+    scanPersonas(projectDir),
   ]);
 
-  // Project overrides global by name
-  const map = new Map<string, PersonaManifest>();
-  for (const p of globalPersonas) map.set(p.name, p);
-  for (const p of projectPersonas) map.set(p.name, p);
+  const key = (p: ParsedSoul) => `${p.frontmatter.author}/${p.frontmatter.name}`;
+  const map = new Map<string, ParsedSoul>();
+  for (const p of globalPersonas) map.set(key(p), p);
+  for (const p of projectPersonas) map.set(key(p), p);
 
   return Array.from(map.values()).map((p) => ({
-    name: p.name,
-    version: p.version,
-    description: p.description,
-    dependencies_count: p.skills
-      ? Object.keys(p.skills).length
+    name: p.frontmatter.name,
+    author: p.frontmatter.author,
+    version: p.frontmatter.version,
+    description: p.frontmatter.description,
+    dependencies_count: p.frontmatter.skillbase?.skills
+      ? Object.keys(p.frontmatter.skillbase.skills).length
       : 0,
   }));
 }
 
 export async function readPersona(
-  name: string,
+  ref: string,
   cwd?: string,
-): Promise<PersonaManifest | null> {
+): Promise<ParsedSoul | null> {
   const workdir = cwd ?? process.cwd();
   const projectDir = getProjectSkillsDir(workdir);
   const globalDir = getGlobalSkillsDir();
 
-  // Project first, then global
-  for (const dir of [projectDir, globalDir]) {
-    const filePath = getPersonaPath(dir, name);
-    try {
-      const raw = await fs.readFile(filePath, "utf-8");
-      return JSON.parse(raw) as PersonaManifest;
-    } catch {
-      continue;
+  const slashIdx = ref.indexOf("/");
+
+  // Qualified ref: author/name — direct lookup
+  if (slashIdx !== -1) {
+    const author = ref.slice(0, slashIdx);
+    const name = ref.slice(slashIdx + 1);
+
+    for (const dir of [projectDir, globalDir]) {
+      const soulPath = getSoulMdPath(dir, author, name);
+      try {
+        const raw = await fs.readFile(soulPath, "utf-8");
+        return parseSoul(raw);
+      } catch { /* not found */ }
     }
+    return null;
   }
+
+  // Short name: search by persona name across all authors
+  for (const dir of [projectDir, globalDir]) {
+    const installedDir = getInstalledDir(dir);
+    try {
+      const authorDirs = await fs.readdir(installedDir, { withFileTypes: true });
+      for (const authorEntry of authorDirs) {
+        if (!authorEntry.isDirectory()) continue;
+        const soulPath = getSoulMdPath(dir, authorEntry.name, ref);
+        try {
+          const raw = await fs.readFile(soulPath, "utf-8");
+          return parseSoul(raw);
+        } catch { /* not found */ }
+      }
+    } catch { /* installed dir doesn't exist */ }
+  }
+
   return null;
 }
 
 export async function installPersona(
   sourcePath: string,
   options?: { global?: boolean; cwd?: string },
-): Promise<PersonaManifest> {
+): Promise<ParsedSoul> {
   const raw = await fs.readFile(sourcePath, "utf-8");
-  const data = JSON.parse(raw) as PersonaManifest;
+  const parsed = parseSoul(raw);
 
-  const validation = validatePersonaManifest(data);
+  const validation = validateSoulFrontmatter(parsed.frontmatter);
   if (!validation.valid) {
     throw new Error(
-      `Invalid persona manifest:\n${validation.errors.join("\n")}`,
+      `Invalid SOUL.md:\n${validation.errors.join("\n")}`,
     );
   }
 
@@ -111,18 +144,17 @@ export async function installPersona(
       ? getGlobalSkillsDir()
       : getProjectSkillsDir(options?.cwd ?? process.cwd());
 
-  const personasDir = getPersonasDir(skillsDir);
-  await fs.mkdir(personasDir, { recursive: true });
+  const { author, name } = parsed.frontmatter;
+  const destPath = getSoulMdPath(skillsDir, author, name);
+  await fs.mkdir(path.dirname(destPath), { recursive: true });
+  await fs.writeFile(destPath, serializeSoul(parsed), "utf-8");
 
-  const destPath = getPersonaPath(skillsDir, data.name);
-  await fs.writeFile(destPath, JSON.stringify(data, null, 2) + "\n", "utf-8");
-
-  return data;
+  return parsed;
 }
 
 export async function getActivePersona(
   cwd?: string,
-): Promise<PersonaManifest | null> {
+): Promise<ParsedSoul | null> {
   const config = await readConfig();
   if (!config.active_persona) return null;
   return readPersona(config.active_persona, cwd);
@@ -137,26 +169,13 @@ export async function setActivePersona(
 }
 
 export function buildCharacterInstructions(
-  character: PersonaCharacter,
-  settings?: PersonaSettings,
+  soul: ParsedSoul,
 ): string {
   const parts: string[] = [];
+  const { frontmatter, body } = soul;
+  const settings = frontmatter.skillbase?.settings;
 
-  parts.push(`## Persona\n\n${character.role}`);
-
-  if (character.tone) {
-    parts.push(`**Tone:** ${character.tone}`);
-  }
-
-  if (character.guidelines && character.guidelines.length > 0) {
-    parts.push(
-      `**Guidelines:**\n${character.guidelines.map((g) => `- ${g}`).join("\n")}`,
-    );
-  }
-
-  if (character.instructions) {
-    parts.push(character.instructions);
-  }
+  parts.push(`## Persona\n\n${body}`);
 
   if (settings?.temperature !== undefined) {
     if (settings.temperature <= 0.3) {

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import matter from "gray-matter";
 
 // Import internals for testing
 // We test the convert logic by calling the exported function with flags (non-interactive)
@@ -33,25 +34,24 @@ describe("skills convert", () => {
     });
 
     const skillDir = path.join(outputDir, "code-review");
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(skillDir, "skill.json"), "utf-8"),
-    );
-    const content = await fs.readFile(
-      path.join(skillDir, "SKILL.md"),
-      "utf-8",
-    );
+    const raw = await fs.readFile(path.join(skillDir, "SKILL.md"), "utf-8");
+    const { data: frontmatter, content } = matter(raw);
 
-    expect(manifest.name).toBe("code-review");
-    expect(manifest.version).toBe("1.0.0");
-    expect(manifest.author).toBe("tester");
-    expect(manifest.license).toBe("MIT");
-    expect(manifest.entry).toBe("SKILL.md");
+    expect(frontmatter.name).toBe("code-review");
+    expect(frontmatter.version).toBe("1.0.0");
+    expect(frontmatter.author).toBe("tester");
+    expect(frontmatter.license).toBe("MIT");
+    expect(frontmatter.schema_version).toBe(3);
     expect(content).toContain("<instructions>");
     expect(content).toContain("# Code Review\n\nReview code carefully.");
     expect(content).toContain("</instructions>");
-    expect(content).toContain("<role>");
+    expect(content).toContain("<context>");
     expect(content).toContain("<examples>");
     expect(content).toContain("<verification>");
+
+    // No skill.json should exist
+    const files = await fs.readdir(skillDir);
+    expect(files).not.toContain("skill.json");
   });
 
   it("converts a directory of prompt files", async () => {
@@ -71,29 +71,18 @@ describe("skills convert", () => {
       output: outputDir,
     });
 
-    // Two skills created
-    const alphaManifest = JSON.parse(
-      await fs.readFile(
-        path.join(outputDir, "alpha", "skill.json"),
-        "utf-8",
-      ),
-    );
-    const betaManifest = JSON.parse(
-      await fs.readFile(
-        path.join(outputDir, "beta", "skill.json"),
-        "utf-8",
-      ),
-    );
+    // Two skills created — read frontmatter from SKILL.md
+    const alphaRaw = await fs.readFile(path.join(outputDir, "alpha", "SKILL.md"), "utf-8");
+    const betaRaw = await fs.readFile(path.join(outputDir, "beta", "SKILL.md"), "utf-8");
+    const alphaFm = matter(alphaRaw).data;
+    const betaFm = matter(betaRaw).data;
 
-    expect(alphaManifest.name).toBe("alpha");
-    expect(alphaManifest.license).toBe("Apache-2.0");
-    expect(betaManifest.name).toBe("beta");
+    expect(alphaFm.name).toBe("alpha");
+    expect(alphaFm.license).toBe("Apache-2.0");
+    expect(betaFm.name).toBe("beta");
 
     // .json file should NOT have been converted
-    const betaContent = await fs.readFile(
-      path.join(outputDir, "beta", "SKILL.md"),
-      "utf-8",
-    );
+    const betaContent = matter(betaRaw).content;
     expect(betaContent).toContain("<instructions>");
     expect(betaContent).toContain("Beta prompt");
     expect(betaContent).toContain("</instructions>");
@@ -113,9 +102,9 @@ describe("skills convert", () => {
       output: outputDir,
     });
 
-    // Should not have created skill.json inside existing dir
+    // Should not have created SKILL.md inside existing dir
     const files = await fs.readdir(path.join(outputDir, "existing"));
-    expect(files).not.toContain("skill.json");
+    expect(files).not.toContain("SKILL.md");
   });
 
   it("slugifies file names correctly", async () => {
@@ -151,12 +140,8 @@ describe("skills convert", () => {
       output: outputDir,
     });
 
-    const manifest = JSON.parse(
-      await fs.readFile(
-        path.join(outputDir, "helper", "skill.json"),
-        "utf-8",
-      ),
-    );
-    expect(manifest.name).toBe("helper");
+    const raw = await fs.readFile(path.join(outputDir, "helper", "SKILL.md"), "utf-8");
+    const { data: frontmatter } = matter(raw);
+    expect(frontmatter.name).toBe("helper");
   });
 });

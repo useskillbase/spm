@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import type { SkillManifest } from "../src/types/index.js";
+import matter from "gray-matter";
+import type { SkillFrontmatter } from "../src/types/index.js";
 
 export async function createTmpDir(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "skillbase-test-"));
@@ -11,9 +12,9 @@ export async function removeTmpDir(dir: string): Promise<void> {
   await fs.rm(dir, { recursive: true, force: true });
 }
 
-export function minimalManifest(overrides: Partial<SkillManifest> = {}): SkillManifest {
+export function minimalFrontmatter(overrides: Partial<SkillFrontmatter> = {}): SkillFrontmatter {
   return {
-    schema_version: 1,
+    schema_version: 3,
     name: "skill",
     version: "1.0.0",
     language: "en",
@@ -23,13 +24,6 @@ export function minimalManifest(overrides: Partial<SkillManifest> = {}): SkillMa
       tags: ["test"],
       priority: 50,
     },
-    dependencies: {},
-    compatibility: {
-      min_context_tokens: 1000,
-      requires: [],
-      models: [],
-    },
-    entry: "SKILL.md",
     security: {
       permissions: [],
     },
@@ -39,17 +33,17 @@ export function minimalManifest(overrides: Partial<SkillManifest> = {}): SkillMa
   };
 }
 
+/** @deprecated Use minimalFrontmatter instead */
+export const minimalManifest = minimalFrontmatter;
+
 export async function installSkillFixture(
   skillsDir: string,
-  manifest: SkillManifest,
-  skillContent: string = "# Test Skill\nDo the thing.",
+  frontmatter: SkillFrontmatter,
+  skillBody: string = "# Test Skill\nDo the thing.",
 ): Promise<string> {
-  const skillDir = path.join(skillsDir, "installed", manifest.author, manifest.name);
+  const skillDir = path.join(skillsDir, "installed", frontmatter.author, frontmatter.name);
   await fs.mkdir(skillDir, { recursive: true });
-  await fs.writeFile(path.join(skillDir, "skill.json"), JSON.stringify(manifest, null, 2));
-  await fs.writeFile(path.join(skillDir, manifest.entry), skillContent);
-  if (manifest.compact_entry) {
-    await fs.writeFile(path.join(skillDir, manifest.compact_entry), "# Compact\nShort version.");
-  }
+  const skillMd = matter.stringify(skillBody, frontmatter as Record<string, unknown>);
+  await fs.writeFile(path.join(skillDir, "SKILL.md"), skillMd);
   return skillDir;
 }

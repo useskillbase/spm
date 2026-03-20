@@ -18,4 +18,19 @@ program
 configureHelp(program);
 await loadCommands(program);
 
-program.parse();
+program.configureOutput({
+  writeErr: () => {},
+  writeOut: (str) => process.stdout.write(str),
+});
+program.exitOverride();
+
+try {
+  await program.parseAsync();
+} catch (err) {
+  if (err && typeof err === "object" && "exitCode" in err && (err as { exitCode: number }).exitCode === 0) {
+    process.exit(0);
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(message);
+  process.exit(1);
+}

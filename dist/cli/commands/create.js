@@ -8,55 +8,32 @@ export const command = {
     args: [{ name: "name", required: true }],
     handler: createCommand,
 };
-function buildManifest(name) {
-    return {
-        schema_version: 1,
-        name,
-        version: "1.0.0",
-        language: "en",
-        description: `TODO: describe what ${name} does`,
-        trigger: {
-            description: `TODO: describe when to use ${name}`,
-            tags: [name],
-            priority: 50,
-        },
-        dependencies: {},
-        compatibility: {
-            min_context_tokens: 1000,
-            requires: [],
-            models: [],
-        },
-        entry: "SKILL.md",
-        security: {
-            permissions: [],
-        },
-        author: "TODO",
-        license: "MIT",
-    };
-}
 // Template follows Claude prompting best practices:
 // https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices
-//
-// Key principles applied:
-// - Give Claude a role (focuses behavior and tone)
-// - Be clear and direct (specific instructions, not vague)
-// - Add context with motivation (WHY behind each instruction helps Claude generalize)
-// - Use XML tags for structure (unambiguous parsing of complex prompts)
-// - Use examples effectively (3-5 diverse examples covering edge cases)
-// - Tell what to do, not what not to do (positive framing)
-// - Control output format explicitly (specify structure before examples)
-// - Ask Claude to self-check (verification at the end)
-const SKILL_MD_TEMPLATE = (name) => `<role>
-TODO: one-sentence role definition that sets expertise and tone.
-E.g., "You are an expert Python developer specializing in data pipelines."
-</role>
+const SKILL_MD_TEMPLATE = (name) => `---
+name: ${name}
+version: 1.0.0
+author: TODO
+license: MIT
+description: "TODO: describe what ${name} does"
+language: en
+
+trigger:
+  description: "TODO: describe when to use ${name}"
+  tags: [${name}]
+  priority: 50
+
+security:
+  permissions: []
+---
 
 # ${name}
 
 <context>
-TODO: explain why this skill exists — what problem it solves and what the user is trying to achieve.
-Motivation helps the model make better decisions in ambiguous situations.
-E.g., "This skill prevents data pipeline failures by enforcing schema validation at every stage."
+TODO: explain what this skill does — what problem it solves, what expertise it brings,
+and what the user is trying to achieve. This sets the scope for all instructions below.
+E.g., "This skill enforces schema validation in Python data pipelines to prevent failures at every stage.
+It brings expertise in pandas, pydantic, and data contracts."
 </context>
 
 <instructions>
@@ -99,13 +76,6 @@ TODO: show the model's complete response following the output format above.
 TODO: show how the model handles this gracefully.
 </output>
 </example>
-
-<example>
-<input>User asks: "TODO: ambiguous request requiring clarification"</input>
-<output>
-TODO: show how the model asks targeted questions or states assumptions explicitly.
-</output>
-</example>
 </examples>
 
 <guidelines>
@@ -121,7 +91,7 @@ Include motivation (WHY) so the model can generalize beyond the literal rule.
 Before completing, verify:
 - [ ] Output follows the format defined in instructions
 - [ ] All edge cases from examples are handled
-- [ ] No security permissions are used beyond what is declared in skill.json
+- [ ] No undeclared permissions are used
 </verification>
 `;
 export async function createCommand(name) {
@@ -134,10 +104,8 @@ export async function createCommand(name) {
         // Directory doesn't exist — good
     }
     await fs.mkdir(dir, { recursive: true });
-    const manifest = buildManifest(name);
-    await fs.writeFile(path.join(dir, "skill.json"), JSON.stringify(manifest, null, 2), "utf-8");
     await fs.writeFile(path.join(dir, "SKILL.md"), SKILL_MD_TEMPLATE(name), "utf-8");
     log.success(`Created skill scaffold: ${dir}/`);
-    note(`skill.json — manifest (edit name, trigger, permissions)\nSKILL.md   — instructions for the model\n\nNext steps:\n  1. Edit skill.json — set author, description, trigger, tags\n  2. Edit SKILL.md — write model instructions\n     Prompting guide: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices\n  3. spm validate ./${name}\n  4. spm link ./${name}`, "Scaffold contents");
+    note(`SKILL.md — metadata (frontmatter) + instructions (body)\n\nNext steps:\n  1. Edit SKILL.md — set author, description, trigger, tags in frontmatter\n  2. Write model instructions in the body\n     Prompting guide: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices\n  3. spm validate ./${name}\n  4. spm link ./${name}`, "Scaffold contents");
 }
 //# sourceMappingURL=create.js.map

@@ -21,7 +21,8 @@ export interface DownloadResult {
   manifest: Record<string, unknown>;
   integrity: string | null;
   tokens_estimate: number;
-  download_url: string; // Presigned URL from storage provider
+  download_url: string;
+  package_type?: "skill" | "persona";
 }
 
 export class RegistryClient {
@@ -40,10 +41,11 @@ export class RegistryClient {
     return `${this.url}/api/skills/${author}/${name}`;
   }
 
-  async search(query?: string, tag?: string, page = 1): Promise<RegistrySearchResult> {
+  async search(query?: string, tag?: string, page = 1, type?: "skill" | "persona"): Promise<RegistrySearchResult> {
     const params = new URLSearchParams();
     if (query) params.set("q", query);
     if (tag) params.set("tag", tag);
+    if (type) params.set("type", type);
     params.set("page", String(page));
 
     const res = await fetch(`${this.url}/api/skills/search?${params}`, {
@@ -116,9 +118,14 @@ export class RegistryClient {
     manifest: SkillManifest;
     content: string;
     compact_content?: string;
+    filename?: string;
   }, archive: Buffer): Promise<PublishResult> {
     const formData = new FormData();
     formData.append("metadata", JSON.stringify(metadata));
+    formData.append("content", metadata.content);
+    if (metadata.filename) {
+      formData.append("filename", metadata.filename);
+    }
     formData.append(
       "archive",
       new Blob([archive as unknown as ArrayBuffer]),

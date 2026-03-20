@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readConfig } from "../../core/config.js";
-import { validateSkillManifest } from "../../schema/skill-schema.js";
+import { parseSkill } from "../../core/skill-parser.js";
+import { parseSoul } from "../../core/persona-parser.js";
+import { validateSkillFrontmatter } from "../../schema/skill-schema.js";
+import { validateSoulFrontmatter } from "../../schema/persona-schema.js";
 import { RegistryClient } from "../../core/registry-client.js";
 import { packSkill } from "../../core/storage/index.js";
 import { parseGitHubUrl } from "../../core/github/client.js";
@@ -13,14 +16,14 @@ const BATCH_LIMIT = 1000;
 
 export const command: CommandDef = {
   name: "publish",
-  description: "Publish a skill to registry",
+  description: "Publish a skill or persona to registry",
   group: "registry",
   args: [{ name: "source", required: false }],
   options: [
     { flags: "--registry <name>", description: "Publish to a specific registry" },
     { flags: "--github", description: "Source is a GitHub URL" },
     { flags: "--dry-run", description: "Show what would happen without executing" },
-    { flags: "--all", description: "Publish all skills found in subdirectories (max 1000)" },
+    { flags: "--all", description: "Publish all packages found in subdirectories (max 1000)" },
   ],
   handler: publishCommand,
 };
@@ -35,7 +38,7 @@ export async function publishCommand(
   }
 
   if (!source) {
-    exitError("Provide a source path or use --all to publish all skills in subdirectories.");
+    exitError("Provide a source path or use --all to publish all packages in subdirectories.");
   }
 
   const { client, reg } = await resolveRegistry(options.registry);
@@ -65,7 +68,11 @@ export async function publishCommand(
     return;
   }
 
-  await publishOne(source, client, reg, options.dryRun);
+  try {
+    await publishOne(source, client, reg, options.dryRun);
+  } catch (err) {
+    exitError(err instanceof Error ? err.message : String(err));
+  }
 }
 
 async function resolveRegistry(registryName?: string): Promise<{ client: RegistryClient; reg: RegistryEntry }> {
@@ -75,7 +82,7 @@ async function resolveRegistry(registryName?: string): Promise<{ client: Registr
     registryName = config.scopes["*"];
   }
   if (!registryName) {
-    exitError("No default registry configured. Use 'skills login <url>' first.");
+    exitError("No default registry configured. Use 'spm login <url>' first.");
   }
 
   const reg = config.registries.find((r) => r.name === registryName);
@@ -84,10 +91,26 @@ async function resolveRegistry(registryName?: string): Promise<{ client: Registr
   }
 
   if (!reg.token) {
-    exitError(`No token for registry "${registryName}". Use 'skills login' first.`);
+    exitError(`No token for registry "${registryName}". Use 'spm login' first.`);
   }
 
   return { client: new RegistryClient(reg.url, reg.token), reg };
+}
+
+async function detectEntryFile(dir: string): Promise<{ filename: string; isPersona: boolean }> {
+  const soulPath = path.join(dir, "SOUL.md");
+  try {
+    await fs.access(soulPath);
+    return { filename: "SOUL.md", isPersona: true };
+  } catch { /* not found */ }
+
+  const skillPath = path.join(dir, "SKILL.md");
+  try {
+    await fs.access(skillPath);
+    return { filename: "SKILL.md", isPersona: false };
+  } catch { /* not found */ }
+
+  throw new Error(`No SKILL.md or SOUL.md found in "${dir}".`);
 }
 
 async function publishOne(
@@ -96,85 +119,149 @@ async function publishOne(
   reg: RegistryEntry,
   dryRun?: boolean,
 ): Promise<{ name: string; version: string; updated: boolean }> {
-  const skillDir = path.resolve(source);
-  const manifestPath = path.join(skillDir, "skill.json");
+  const pkgDir = path.resolve(source);
+  const { filename, isPersona } = await detectEntryFile(pkgDir);
+
+  const raw = await fs.readFile(path.join(pkgDir, filename), "utf-8");
 
   let manifest: SkillManifest;
-  try {
-    const raw = await fs.readFile(manifestPath, "utf-8");
-    const data = JSON.parse(raw) as unknown;
-    const validation = validateSkillManifest(data);
+  let body: string;
+
+  if (isPersona) {
+    const parsed = parseSoul(raw);
+    const validation = validateSoulFrontmatter(parsed.frontmatter);
     if (!validation.valid) {
-      throw new Error(`Invalid skill.json:\n${validation.errors.map((e) => `  - ${e}`).join("\n")}`);
+      throw new Error(`Invalid SOUL.md:\n${validation.errors.map((e) => `  - ${e}`).join("\n")}`);
     }
-    manifest = data as SkillManifest;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`Cannot read skill.json in "${source}".`);
+
+    const fm = parsed.frontmatter;
+
+    // Validate skill dependencies exist in registry
+    const depSkills = fm.skillbase?.skills ?? {};
+    const depRefs = Object.keys(depSkills);
+    if (depRefs.length > 0) {
+      const missing: string[] = [];
+      for (const ref of depRefs) {
+        const slashIdx = ref.indexOf("/");
+        if (slashIdx === -1) {
+          missing.push(`${ref} (invalid format, expected author/name)`);
+          continue;
+        }
+        const depAuthor = ref.slice(0, slashIdx);
+        const depName = ref.slice(slashIdx + 1);
+        try {
+          const skill = await client.getSkill(depAuthor, depName);
+          if (!skill) missing.push(ref);
+        } catch {
+          missing.push(ref);
+        }
+      }
+      if (missing.length > 0) {
+        throw new Error(
+          `Persona depends on skills not found in registry:\n${missing.map((s) => `  - ${s}`).join("\n")}`,
+        );
+      }
     }
-    throw err;
+
+    const trigger = fm.skillbase?.trigger;
+
+    manifest = {
+      schema_version: fm.skillbase?.schema_version ?? 3,
+      name: fm.name,
+      version: fm.version,
+      language: "en",
+      description: fm.description,
+      trigger: trigger ? { description: trigger.description, tags: trigger.tags ?? [], priority: trigger.priority ?? 50 } : undefined,
+      dependencies: {},
+      entry: "SOUL.md",
+      author: fm.author,
+      license: fm.license,
+    } as SkillManifest;
+
+    body = parsed.body;
+  } else {
+    const parsed = parseSkill(raw);
+    const validation = validateSkillFrontmatter(parsed.frontmatter);
+    if (!validation.valid) {
+      throw new Error(`Invalid SKILL.md:\n${validation.errors.map((e) => `  - ${e}`).join("\n")}`);
+    }
+
+    const fm = parsed.frontmatter;
+    manifest = {
+      schema_version: fm.schema_version,
+      name: fm.name,
+      version: fm.version,
+      language: fm.language,
+      description: fm.description,
+      trigger: fm.trigger,
+      dependencies: fm.dependencies ?? {},
+      compatibility: fm.compatibility,
+      entry: "SKILL.md",
+      security: fm.security,
+      works_with: fm.works_with,
+      author: fm.author,
+      license: fm.license,
+      repository: fm.repository,
+      docs: fm.docs,
+    };
+
+    body = parsed.body;
   }
 
-  if (!manifest.entry) {
-    throw new Error(`${manifest.name}: no 'entry' field. Bundles cannot be published.`);
-  }
-
-  const entryPath = path.join(skillDir, manifest.entry);
-  const content = await fs.readFile(entryPath, "utf-8");
-
-  let compactContent: string | undefined;
-  if (manifest.compact_entry) {
-    try {
-      compactContent = await fs.readFile(path.join(skillDir, manifest.compact_entry), "utf-8");
-    } catch {
-      // Optional
-    }
-  }
-
+  const typeLabel = isPersona ? "persona" : "skill";
   const s = spinner();
-  s.start(`Packaging ${manifest.name}@${manifest.version}...`);
-  const pkg = await packSkill(skillDir);
+  s.start(`Packaging ${typeLabel} ${manifest.name}@${manifest.version}...`);
+  const pkg = await packSkill(pkgDir);
 
   if (dryRun) {
     s.stop("Done (dry-run)");
     note(
-      `Would publish ${manifest.name}@${manifest.version} to ${reg.name}\nPackage size: ${formatSize(pkg.size)} (${pkg.filesCount} files)\nIntegrity: ${pkg.integrity}`,
+      `Would publish ${typeLabel} ${manifest.name}@${manifest.version} to ${reg.name}\nPackage size: ${formatSize(pkg.size)} (${pkg.filesCount} files)\nIntegrity: ${pkg.integrity}`,
       "Dry run",
     );
     return { name: manifest.name, version: manifest.version, updated: false };
   }
 
-  s.message(`Publishing ${manifest.name}@${manifest.version} to ${reg.name}...`);
+  s.message(`Publishing ${typeLabel} ${manifest.name}@${manifest.version} to ${reg.name}...`);
 
-  const result = await client.publishWithArchive(
-    { manifest, content, compact_content: compactContent },
-    pkg.data,
-  );
+  let result: Awaited<ReturnType<typeof client.publishWithArchive>>;
+  try {
+    result = await client.publishWithArchive(
+      { manifest, content: raw, filename },
+      pkg.data,
+    );
+  } catch (err) {
+    s.stop("Failed");
+    exitError(err instanceof Error ? err.message : String(err));
+  }
 
   s.stop(
     result.updated
-      ? `Updated ${result.name}@${result.version}`
-      : `Published ${result.name}@${result.version}`,
+      ? `Updated ${typeLabel} ${result.name}@${result.version}`
+      : `Published ${typeLabel} ${result.name}@${result.version}`,
   );
   log.info(`Size: ${formatSize(result.size ?? pkg.size)}`);
-  log.info(`Tokens: ~${Math.ceil(content.length / 4).toLocaleString()}`);
+  log.info(`Tokens: ~${Math.ceil(body.length / 4).toLocaleString()}`);
 
   return { name: result.name, version: result.version, updated: result.updated };
 }
 
-async function discoverSkillDirs(baseDir: string): Promise<string[]> {
+async function discoverPackageDirs(baseDir: string): Promise<string[]> {
   const entries = await fs.readdir(baseDir, { withFileTypes: true });
   const dirs: string[] = [];
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-    const skillJson = path.join(baseDir, entry.name, "skill.json");
-    try {
-      await fs.access(skillJson);
-      dirs.push(path.join(baseDir, entry.name));
-    } catch {
-      // No skill.json — skip
+
+    const dirPath = path.join(baseDir, entry.name);
+    // Check for SKILL.md or SOUL.md
+    for (const filename of ["SKILL.md", "SOUL.md"]) {
+      try {
+        await fs.access(path.join(dirPath, filename));
+        dirs.push(dirPath);
+        break;
+      } catch { /* not found */ }
     }
   }
 
@@ -185,17 +272,17 @@ async function publishAll(
   options: { registry?: string; dryRun?: boolean },
 ): Promise<void> {
   const baseDir = process.cwd();
-  const skillDirs = await discoverSkillDirs(baseDir);
+  const pkgDirs = await discoverPackageDirs(baseDir);
 
-  if (skillDirs.length === 0) {
-    exitError(`No subdirectories with skill.json found in ${baseDir}`);
+  if (pkgDirs.length === 0) {
+    exitError(`No subdirectories with SKILL.md or SOUL.md found in ${baseDir}`);
   }
 
-  if (skillDirs.length > BATCH_LIMIT) {
-    exitError(`Found ${skillDirs.length} skills — exceeds limit of ${BATCH_LIMIT}. Publish in smaller batches.`);
+  if (pkgDirs.length > BATCH_LIMIT) {
+    exitError(`Found ${pkgDirs.length} packages — exceeds limit of ${BATCH_LIMIT}. Publish in smaller batches.`);
   }
 
-  log.info(`Found ${skillDirs.length} skills to publish`);
+  log.info(`Found ${pkgDirs.length} package(s) to publish`);
 
   const { client, reg } = await resolveRegistry(options.registry);
 
@@ -203,7 +290,7 @@ async function publishAll(
   let updated = 0;
   let failed = 0;
 
-  for (const dir of skillDirs) {
+  for (const dir of pkgDirs) {
     try {
       const result = await publishOne(dir, client, reg, options.dryRun);
       if (result.updated) {

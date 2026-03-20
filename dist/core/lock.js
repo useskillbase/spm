@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { getInstalledDir } from "./paths.js";
+import { parseSkill } from "./skill-parser.js";
 async function hashDirectory(dir) {
     const hash = crypto.createHash("sha256");
     const entries = await fs.readdir(dir, { recursive: true });
@@ -15,15 +16,6 @@ async function hashDirectory(dir) {
         }
     }
     return hash.digest("hex");
-}
-async function estimateTokensForFile(filePath) {
-    try {
-        const content = await fs.readFile(filePath, "utf-8");
-        return Math.ceil(content.length / 4);
-    }
-    catch {
-        return 0;
-    }
 }
 export async function buildLock(skillsDir) {
     const installedDir = getInstalledDir(skillsDir);
@@ -51,27 +43,32 @@ export async function buildLock(skillsDir) {
             const skillStat = await fs.stat(skillDir);
             if (!skillStat.isDirectory())
                 continue;
-            const manifestPath = path.join(skillDir, "skill.json");
-            let manifest;
+            const skillMdPath = path.join(skillDir, "SKILL.md");
+            let name;
+            let version;
+            let dependencies;
+            let bodyLength;
             try {
-                const raw = await fs.readFile(manifestPath, "utf-8");
-                manifest = JSON.parse(raw);
+                const raw = await fs.readFile(skillMdPath, "utf-8");
+                const parsed = parseSkill(raw);
+                name = parsed.frontmatter.name;
+                version = parsed.frontmatter.version;
+                dependencies = parsed.frontmatter.dependencies ?? {};
+                bodyLength = parsed.body.length;
             }
             catch {
                 continue;
             }
             const integrity = await hashDirectory(skillDir);
-            const tokensEstimate = manifest.entry
-                ? await estimateTokensForFile(path.join(skillDir, manifest.entry))
-                : 0;
+            const tokensEstimate = Math.ceil(bodyLength / 4);
             const entry = {
-                version: manifest.version,
+                version,
                 resolved: skillDir,
                 integrity: `sha256-${integrity}`,
                 tokens_estimate: tokensEstimate,
-                dependencies: manifest.dependencies,
+                dependencies,
             };
-            lock.skills[`${author}/${manifest.name}`] = entry;
+            lock.skills[`${author}/${name}`] = entry;
             lock.total_tokens_estimate += tokensEstimate;
         }
     }

@@ -36,7 +36,7 @@ async function reindexCommand(options: { project?: boolean }): Promise<void> {
         log.success(`Project: ${index.skills.length} skill(s) indexed`);
       }
     } catch {
-      log.info("No .skills/installed/ directory in current project.");
+      log.info("No .spm/installed/ directory in current project.");
     }
   }
 }

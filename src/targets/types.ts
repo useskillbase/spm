@@ -1,4 +1,4 @@
-import type { PersonaManifest, LoadedSkill } from "../types/index.js";
+import type { ParsedSoul, LegacyPersonaManifest, LoadedSkill } from "../types/index.js";
 
 export interface ExportOptions {
   outputDir: string;
@@ -27,18 +27,34 @@ export interface DeployResult {
   dockerFragment?: string;
 }
 
+export interface RemoteDeployOptions {
+  connectionName?: string;
+}
+
+export interface RemoteDeployResult {
+  connectionName: string;
+  url: string;
+  success: boolean;
+  message?: string;
+}
+
 export interface DeployTarget {
   id: string;
   name: string;
   export(
-    persona: PersonaManifest,
+    persona: ParsedSoul,
     skills: LoadedSkill[],
     options: ExportOptions,
   ): Promise<ExportResult>;
   deploy(
-    persona: PersonaManifest,
+    persona: ParsedSoul,
     skills: LoadedSkill[],
     options: DeployOptions,
   ): Promise<DeployResult>;
-  import?(sourcePath: string): Promise<PersonaManifest>;
+  import?(sourcePath: string): Promise<LegacyPersonaManifest>;
+  remoteDeploy?(
+    persona: ParsedSoul,
+    skills: LoadedSkill[],
+    options: RemoteDeployOptions,
+  ): Promise<RemoteDeployResult>;
 }

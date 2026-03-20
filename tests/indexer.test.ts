@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
+import matter from "gray-matter";
 import { buildIndex, writeIndex } from "../src/core/indexer.js";
 import { getIndexPath } from "../src/core/paths.js";
-import { createTmpDir, removeTmpDir, minimalManifest, installSkillFixture } from "./helpers.js";
+import { createTmpDir, removeTmpDir, minimalFrontmatter, installSkillFixture } from "./helpers.js";
 
 let tmpDir: string;
 
@@ -29,8 +30,8 @@ describe("buildIndex", () => {
   });
 
   it("indexes a single valid skill", async () => {
-    const manifest = minimalManifest();
-    await installSkillFixture(tmpDir, manifest);
+    const fm = minimalFrontmatter();
+    await installSkillFixture(tmpDir, fm);
     const index = await buildIndex(tmpDir);
 
     expect(index.skills).toHaveLength(1);
@@ -43,15 +44,15 @@ describe("buildIndex", () => {
   });
 
   it("sorts skills by priority descending", async () => {
-    await installSkillFixture(tmpDir, minimalManifest({
+    await installSkillFixture(tmpDir, minimalFrontmatter({
       name: "low",
       trigger: { description: "low", tags: ["l"], priority: 10 },
     }));
-    await installSkillFixture(tmpDir, minimalManifest({
+    await installSkillFixture(tmpDir, minimalFrontmatter({
       name: "high",
       trigger: { description: "high", tags: ["h"], priority: 90 },
     }));
-    await installSkillFixture(tmpDir, minimalManifest({
+    await installSkillFixture(tmpDir, minimalFrontmatter({
       name: "mid",
       trigger: { description: "mid", tags: ["m"], priority: 50 },
     }));
@@ -66,7 +67,7 @@ describe("buildIndex", () => {
 
   it("estimates tokens as content_length / 4", async () => {
     const content = "x".repeat(400);
-    await installSkillFixture(tmpDir, minimalManifest(), content);
+    await installSkillFixture(tmpDir, minimalFrontmatter(), content);
     const index = await buildIndex(tmpDir);
     expect(index.skills[0].tokens_estimate).toBe(100);
   });
@@ -74,27 +75,26 @@ describe("buildIndex", () => {
   it("indexes skills in author/name directory layout", async () => {
     const skillDir = path.join(tmpDir, "installed", "myauthor", "myskill");
     await fs.mkdir(skillDir, { recursive: true });
-    const manifest = minimalManifest({ name: "myskill", author: "myauthor" });
-    await fs.writeFile(path.join(skillDir, "skill.json"), JSON.stringify(manifest));
-    await fs.writeFile(path.join(skillDir, "SKILL.md"), "content");
+    const fm = minimalFrontmatter({ name: "myskill", author: "myauthor" });
+    const skillMd = matter.stringify("content", fm as Record<string, unknown>);
+    await fs.writeFile(path.join(skillDir, "SKILL.md"), skillMd);
 
     const index = await buildIndex(tmpDir);
     expect(index.skills).toHaveLength(1);
     expect(index.skills[0].name).toBe("myauthor/myskill");
   });
 
-  it("skips skills with invalid skill.json", async () => {
+  it("skips skills with invalid SKILL.md", async () => {
     const skillDir = path.join(tmpDir, "installed", "test", "bad");
     await fs.mkdir(skillDir, { recursive: true });
-    await fs.writeFile(path.join(skillDir, "skill.json"), "not json");
+    await fs.writeFile(path.join(skillDir, "SKILL.md"), "no frontmatter here");
 
     const index = await buildIndex(tmpDir);
     expect(index.skills).toEqual([]);
   });
 
-  it("includes compact_entry and file_patterns when present", async () => {
-    const manifest = minimalManifest({
-      compact_entry: "SKILL.compact.md",
+  it("includes file_patterns when present", async () => {
+    const fm = minimalFrontmatter({
       trigger: {
         description: "test",
         tags: ["test"],
@@ -102,17 +102,16 @@ describe("buildIndex", () => {
         priority: 50,
       },
     });
-    await installSkillFixture(tmpDir, manifest);
+    await installSkillFixture(tmpDir, fm);
     const index = await buildIndex(tmpDir);
 
     expect(index.skills[0].file_patterns).toEqual(["*.docx"]);
-    expect(index.skills[0].compact_entry).toContain("SKILL.compact.md");
   });
 });
 
 describe("writeIndex", () => {
   it("writes index.json to disk", async () => {
-    await installSkillFixture(tmpDir, minimalManifest());
+    await installSkillFixture(tmpDir, minimalFrontmatter());
     const index = await writeIndex(tmpDir);
 
     const raw = await fs.readFile(getIndexPath(tmpDir), "utf-8");

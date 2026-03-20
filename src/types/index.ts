@@ -1,4 +1,4 @@
-// -- skill.json types --
+// -- SKILL.md frontmatter types (v3) --
 
 export interface SkillTrigger {
   description: string;
@@ -17,13 +17,6 @@ export interface SkillCompatibility {
   models: string[];
 }
 
-export interface SkillFiles {
-  reference?: string[];
-  examples?: string[];
-  assets?: string[];
-  tests?: string[];
-}
-
 export interface SkillWorksWithEntry {
   skill: string;
   relationship: "input" | "output" | "parallel";
@@ -36,14 +29,47 @@ export interface SkillSecurity {
   integrity?: string;
 }
 
-export interface SkillQuality {
-  usage_count: number;
-  success_rate: number;
-  avg_rating: number;
-  confidence: number;
+export interface SkillFrontmatter {
+  schema_version: number;
+  name: string;
+  version: string;
+  author: string;
+  license: string;
+  description: string;
+  language?: string;
+  trigger?: SkillTrigger;
+  security?: SkillSecurity;
+  dependencies?: SkillDependencies;
+  compatibility?: SkillCompatibility;
+  works_with?: SkillWorksWithEntry[];
+  docs?: SkillDocs;
+  repository?: string;
 }
 
-export interface SkillManifest {
+export interface SkillDocs {
+  sources: DocSource[];
+  delivery?: "local" | "remote" | "auto";
+  priority_pages?: string[];
+}
+
+export interface DocSource {
+  type: "url" | "llms-txt" | "github";
+  url: string;
+  scope?: "crawl" | "page" | "sitemap";
+  depth?: number;
+  include?: string[];
+  exclude?: string[];
+  label?: string;
+}
+
+export interface ParsedSkill {
+  frontmatter: SkillFrontmatter;
+  body: string;
+}
+
+// -- Legacy skill.json types (v1/v2, used only for migration) --
+
+export interface LegacySkillManifest {
   schema_version: number;
   name: string;
   version: string;
@@ -54,14 +80,121 @@ export interface SkillManifest {
   compatibility?: SkillCompatibility;
   entry?: string;
   compact_entry?: string;
-  files?: SkillFiles;
+  files?: {
+    reference?: string[];
+    examples?: string[];
+    assets?: string[];
+    tests?: string[];
+  };
   works_with?: SkillWorksWithEntry[];
   security?: SkillSecurity;
-  quality?: SkillQuality;
+  quality?: {
+    usage_count: number;
+    success_rate: number;
+    avg_rating: number;
+    confidence: number;
+  };
   author: string;
   license: string;
   repository?: string;
+  docs?: SkillDocs;
 }
+
+/** @deprecated Use SkillFrontmatter instead */
+export type SkillManifest = LegacySkillManifest;
+
+// -- SOUL.md frontmatter types (v3) --
+
+export interface SoulSkillbaseBlock {
+  schema_version: number;
+  trigger?: SkillTrigger;
+  skills?: SkillDependencies;
+  knowledge_scope?: {
+    built_in?: string[];
+    requires_user_context?: string[];
+  };
+  context_slot?: {
+    placeholder: string;
+    required: boolean;
+    example?: string;
+  };
+  constraints?: {
+    never?: string[];
+    always?: string[];
+  };
+  avatar?: {
+    seed?: number;
+    prompt?: string;
+    model_hint?: string;
+    via_mcp?: string;
+  };
+  voice?: {
+    provider_hint?: string;
+    voice_id?: string;
+    speaking_style?: string;
+    via_mcp?: string;
+  };
+  animation?: {
+    mode?: string;
+    via_mcp?: string;
+    required?: boolean;
+  };
+  mcp_servers?: Record<string, {
+    description?: string;
+    tool?: string;
+    required?: boolean;
+    fallback?: string;
+  }>;
+  settings?: {
+    temperature?: number;
+    top_p?: number;
+    [key: string]: number | undefined;
+  };
+}
+
+export interface SoulFrontmatter {
+  name: string;
+  version: string;
+  author: string;
+  license: string;
+  description: string;
+  skillbase?: SoulSkillbaseBlock;
+}
+
+export interface ParsedSoul {
+  frontmatter: SoulFrontmatter;
+  body: string;
+}
+
+// -- Legacy persona types (v1/v2, used only for migration) --
+
+export interface PersonaCharacter {
+  role: string;
+  tone?: string;
+  guidelines?: string[];
+  instructions?: string;
+}
+
+export interface LegacyPersonaManifest {
+  schema_version: number;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  license: string;
+  skills?: SkillDependencies;
+  character: PersonaCharacter;
+  settings?: {
+    temperature?: number;
+    top_p?: number;
+    [key: string]: number | undefined;
+  };
+}
+
+/** @deprecated Use SoulFrontmatter instead */
+export type PersonaManifest = LegacyPersonaManifest;
+
+export type PersonaSettings = LegacyPersonaManifest["settings"];
 
 // -- index.json types --
 
@@ -73,8 +206,8 @@ export interface IndexSkillEntry {
   file_patterns?: string[];
   priority: number;
   entry: string;
-  compact_entry?: string;
   tokens_estimate: number;
+  package_type?: "skill" | "persona";
 }
 
 export interface SkillIndex {
@@ -82,21 +215,18 @@ export interface SkillIndex {
   skills: IndexSkillEntry[];
 }
 
-// -- skills.lock types --
+// -- skillbase.json types (v3 workspace manifest) --
 
-export interface LockSkillEntry {
+export interface WorkspaceManifest {
+  schema_version: number;
+  name: string;
   version: string;
-  resolved: string;
-  integrity: string;
-  tokens_estimate: number;
-  dependencies: SkillDependencies;
-}
-
-export interface SkillsLock {
-  lock_version: number;
-  generated: string;
-  total_tokens_estimate: number;
-  skills: Record<string, LockSkillEntry>;
+  skills?: SkillDependencies;
+  personas?: SkillDependencies;
+  registry?: string;
+  spm?: {
+    default_instance?: string;
+  };
 }
 
 // -- Feedback types --
@@ -149,6 +279,7 @@ export interface ToolsConfig {
   skill_install: boolean;
   persona_load: boolean;
   persona_list: boolean;
+  persona_install: boolean;
   skill_exec: boolean;
 }
 
@@ -173,6 +304,23 @@ export interface SkillsConfig {
   github?: {
     token?: string;
   };
+}
+
+// -- skills.lock types --
+
+export interface LockSkillEntry {
+  version: string;
+  resolved: string;
+  integrity: string;
+  tokens_estimate: number;
+  dependencies: SkillDependencies;
+}
+
+export interface SkillsLock {
+  lock_version: number;
+  generated: string;
+  total_tokens_estimate: number;
+  skills: Record<string, LockSkillEntry>;
 }
 
 // -- Registry server types --
@@ -201,15 +349,12 @@ export interface RemoteSkillEntry {
 }
 
 export interface PublishRequest {
-  manifest: SkillManifest;
-  content: string; // SKILL.md content
-  compact_content?: string;
-  files?: Record<string, string>; // relative path → content
-  source: {
+  content: string; // Full SKILL.md content (frontmatter + body)
+  source?: {
     type: "upload" | "github";
     github_url?: string;
-    github_ref?: string; // branch/tag
-    github_path?: string; // subpath in repo
+    github_ref?: string;
+    github_path?: string;
   };
 }
 
@@ -218,33 +363,6 @@ export interface RegistrySearchResult {
   total: number;
   page: number;
   per_page: number;
-}
-
-// -- Persona types --
-
-export interface PersonaCharacter {
-  role: string;
-  tone?: string;
-  guidelines?: string[];
-  instructions?: string;
-}
-
-export interface PersonaSettings {
-  temperature?: number;
-  top_p?: number;
-  [key: string]: number | undefined;
-}
-
-export interface PersonaManifest {
-  schema_version: number;
-  name: string;
-  version: string;
-  description: string;
-  author: string;
-  license: string;
-  skills?: SkillDependencies;
-  character: PersonaCharacter;
-  settings?: PersonaSettings;
 }
 
 // -- Runtime types --

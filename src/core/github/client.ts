@@ -1,17 +1,12 @@
 import { Octokit } from "@octokit/rest";
-import type { SkillManifest } from "../../types/index.js";
+import type { ParsedSkill } from "../../types/index.js";
+import { parseSkill } from "../skill-parser.js";
 
 export interface GitHubSource {
   owner: string;
   repo: string;
   ref?: string; // branch or tag, defaults to default branch
   path?: string; // subpath within repo
-}
-
-export interface FetchedSkill {
-  manifest: SkillManifest;
-  entryContent: string;
-  compactContent?: string;
 }
 
 export function parseGitHubUrl(url: string): GitHubSource {
@@ -72,7 +67,7 @@ export function createOctokit(token?: string): Octokit {
 export async function fetchSkillFromGitHub(
   source: GitHubSource,
   token?: string,
-): Promise<FetchedSkill> {
+): Promise<ParsedSkill> {
   const octokit = createOctokit(token);
   const basePath = source.path ? `${source.path}/` : "";
   const params: { owner: string; repo: string; ref?: string } = {
@@ -81,48 +76,17 @@ export async function fetchSkillFromGitHub(
   };
   if (source.ref) params.ref = source.ref;
 
-  // Fetch skill.json
-  const manifestResponse = await octokit.repos.getContent({
+  const response = await octokit.repos.getContent({
     ...params,
-    path: `${basePath}skill.json`,
+    path: `${basePath}SKILL.md`,
   });
 
-  if (!("content" in manifestResponse.data)) {
-    throw new Error("skill.json not found or is a directory");
+  if (!("content" in response.data)) {
+    throw new Error("SKILL.md not found or is a directory");
   }
 
-  const manifestRaw = Buffer.from(manifestResponse.data.content, "base64").toString("utf-8");
-  const manifest = JSON.parse(manifestRaw) as SkillManifest;
-
-  // Fetch entry file (SKILL.md)
-  const entryResponse = await octokit.repos.getContent({
-    ...params,
-    path: `${basePath}${manifest.entry}`,
-  });
-
-  if (!("content" in entryResponse.data)) {
-    throw new Error(`Entry file "${manifest.entry}" not found`);
-  }
-
-  const entryContent = Buffer.from(entryResponse.data.content, "base64").toString("utf-8");
-
-  // Fetch compact entry if defined
-  let compactContent: string | undefined;
-  if (manifest.compact_entry) {
-    try {
-      const compactResponse = await octokit.repos.getContent({
-        ...params,
-        path: `${basePath}${manifest.compact_entry}`,
-      });
-      if ("content" in compactResponse.data) {
-        compactContent = Buffer.from(compactResponse.data.content, "base64").toString("utf-8");
-      }
-    } catch {
-      // Compact entry is optional
-    }
-  }
-
-  return { manifest, entryContent, compactContent };
+  const raw = Buffer.from(response.data.content, "base64").toString("utf-8");
+  return parseSkill(raw);
 }
 
 // Download full skill directory as files map (for install)

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import matter from "gray-matter";
 import {
   listPersonas,
   readPersona,
@@ -10,10 +11,11 @@ import { readConfig } from "../../core/config.js";
 import { getClientForSkill } from "../../core/registry-client.js";
 import { getSkillIndex, findSkill } from "../../core/registry.js";
 import { loadSkill } from "../../core/loader.js";
-import { validatePersonaManifest } from "../../schema/persona-schema.js";
-import { installSingleFromRegistry, resolveSkillsDir } from "./add.js";
+import { validateSoulFrontmatter } from "../../schema/persona-schema.js";
+import { parseSoul } from "../../core/persona-parser.js";
+import { installSingleFromRegistry, installFromRegistry, resolveSkillsDir } from "./add.js";
 import { getTarget, getAllTargetIds } from "../../targets/index.js";
-import type { PersonaManifest, LoadedSkill } from "../../types/index.js";
+import type { ParsedSoul, LoadedSkill } from "../../types/index.js";
 import { log, spinner, note, multiselect, isCancel, cancel, exitError } from "../ui.js";
 import type { CommandDef } from "../command.js";
 
@@ -23,44 +25,65 @@ function parseSkillRef(ref: string): { author: string; name: string } | null {
   return { author: match[1], name: match[2] };
 }
 
-function buildPersonaTemplate(name: string): PersonaManifest {
-  return {
-    schema_version: 1,
-    name,
-    version: "1.0.0",
-    description: `TODO: describe ${name} persona`,
-    author: "TODO",
-    license: "MIT",
-    skills: {},
-    character: {
-      role: "TODO: describe the persona's role and expertise.",
-      tone: "TODO: e.g. professional, friendly, concise",
-      guidelines: [
-        "TODO: add behavioral guidelines",
-      ],
+function buildSoulTemplate(name: string): string {
+  return matter.stringify(
+    [
+      "",
+      "## Role",
+      "",
+      "TODO: describe the persona's role and expertise.",
+      "",
+      "## Tone",
+      "",
+      "TODO: e.g. professional, friendly, concise",
+      "",
+      "## Guidelines",
+      "",
+      "- TODO: add behavioral guidelines",
+      "",
+    ].join("\n"),
+    {
+      name,
+      version: "1.0.0",
+      author: "TODO",
+      license: "MIT",
+      description: `TODO: describe ${name} persona`,
+      skillbase: {
+        schema_version: 3,
+        trigger: {
+          description: `TODO: describe when to use ${name}`,
+          tags: ["TODO"],
+          priority: 50,
+        },
+        skills: {},
+        settings: {
+          temperature: 0.3,
+        },
+      },
     },
-  };
+  );
 }
 
 // --- Handlers ---
 
 async function personaCreateCommand(name: string): Promise<void> {
-  const fileName = `${name}.person.json`;
-  const filePath = path.resolve(fileName);
+  const fileName = "SOUL.md";
+  const dirPath = path.resolve(name);
+  const filePath = path.join(dirPath, fileName);
 
   try {
     await fs.access(filePath);
-    exitError(`File "${fileName}" already exists.`);
+    exitError(`File "${filePath}" already exists.`);
   } catch {
-    // File doesn't exist — good
+    // Doesn't exist — good
   }
 
-  const template = buildPersonaTemplate(name);
-  await fs.writeFile(filePath, JSON.stringify(template, null, 2) + "\n", "utf-8");
+  await fs.mkdir(dirPath, { recursive: true });
+  await fs.writeFile(filePath, buildSoulTemplate(name), "utf-8");
 
-  log.success(`Created persona scaffold: ${fileName}`);
+  log.success(`Created persona scaffold: ${filePath}`);
   note(
-    `1. Edit ${fileName} — set character and settings\n2. spm add <author/skill> --for ${name}\n3. spm persona activate ${name}`,
+    `1. Edit ${filePath} — set character and settings\n2. spm persona activate author/${name}`,
     "Next steps",
   );
 }
@@ -76,34 +99,59 @@ async function personaListCommand(): Promise<void> {
   }
 
   for (const p of personas) {
-    const active = config.active_persona === p.name ? " (active)" : "";
+    const ref = `${p.author}/${p.name}`;
+    const active = config.active_persona === ref ? " (active)" : "";
     log.message(
-      `${p.name}@${p.version}${active} — ${p.description} [${p.dependencies_count} skills]`,
+      `${ref}@${p.version}${active} — ${p.description} [${p.dependencies_count} skills]`,
     );
   }
 }
 
-async function personaActivateCommand(name: string): Promise<void> {
-  // First try to find installed persona
+export async function personaActivateCommand(name: string): Promise<void> {
   let persona = await readPersona(name);
 
-  // If not installed, try to install from .person.json in cwd
+  // If not installed, try to find SOUL.md in cwd
   if (!persona) {
-    const fileName = `${name}.person.json`;
-    const filePath = path.resolve(fileName);
+    const soulPath = path.resolve(name, "SOUL.md");
     try {
-      await fs.access(filePath);
-      const installed = await installPersona(filePath, { global: true });
+      await fs.access(soulPath);
+      const installed = await installPersona(soulPath, { global: true });
+      const ref = `${installed.frontmatter.author}/${installed.frontmatter.name}`;
+      log.success(`Installed persona from ${soulPath}`);
+      name = ref;
       persona = installed;
-      log.success(`Installed persona from ${fileName}`);
     } catch {
-      exitError(`Persona "${name}" not found. Use \`spm persona list\` or create one with \`spm persona create ${name}\`.`);
+      // Not in cwd either
     }
   }
 
+  // Try registry fallback
+  if (!persona) {
+    const parsed = parseSkillRef(name);
+    if (parsed) {
+      const config = await readConfig();
+      const client = getClientForSkill(config, name);
+      if (client) {
+        try {
+          log.step(`Searching registry for ${name}...`);
+          const { skillsDir, isProject } = await resolveSkillsDir();
+          await installFromRegistry(name, skillsDir, isProject);
+          persona = await readPersona(name);
+        } catch {
+          // Not in registry either
+        }
+      }
+    }
+  }
+
+  if (!persona) {
+    exitError(`Persona "${name}" not found locally or in registry.`);
+  }
+
   // Auto-install missing skills
-  if (persona.skills) {
-    const skillRefs = Object.keys(persona.skills);
+  const skills = persona.frontmatter.skillbase?.skills;
+  if (skills) {
+    const skillRefs = Object.keys(skills);
     if (skillRefs.length > 0) {
       const index = await getSkillIndex();
       const missing: string[] = [];
@@ -184,8 +232,8 @@ async function selectPersonasInteractively(): Promise<string[]> {
   const choices = await multiselect({
     message: "Select persona(s) to remove:",
     options: personas.map((p) => ({
-      value: p.name,
-      label: `${p.name}@${p.version}`,
+      value: `${p.author}/${p.name}`,
+      label: `${p.author}/${p.name}@${p.version}`,
     })),
     required: true,
   });
@@ -204,38 +252,25 @@ async function personaInfoCommand(name: string): Promise<void> {
     exitError(`Persona "${name}" not found. Use \`spm persona list\` to see available personas.`);
   }
 
+  const { frontmatter, body } = persona;
   const lines: string[] = [];
-  lines.push(`description: ${persona.description}`);
-  lines.push(`author:      ${persona.author}`);
-  lines.push(`license:     ${persona.license}`);
-  lines.push("");
-  lines.push("character:");
-  lines.push(`  role: ${persona.character.role}`);
-  if (persona.character.tone) {
-    lines.push(`  tone: ${persona.character.tone}`);
-  }
-  if (persona.character.guidelines && persona.character.guidelines.length > 0) {
-    lines.push("  guidelines:");
-    for (const g of persona.character.guidelines) {
-      lines.push(`    - ${g}`);
-    }
-  }
-  if (persona.character.instructions) {
-    lines.push(`  instructions: ${persona.character.instructions}`);
-  }
+  lines.push(`description: ${frontmatter.description}`);
+  lines.push(`author:      ${frontmatter.author}`);
+  lines.push(`license:     ${frontmatter.license}`);
 
-  if (persona.settings) {
+  if (frontmatter.skillbase?.settings) {
     lines.push("");
     lines.push("settings:");
-    for (const [key, value] of Object.entries(persona.settings)) {
+    for (const [key, value] of Object.entries(frontmatter.skillbase.settings)) {
       if (value !== undefined) {
         lines.push(`  ${key}: ${value}`);
       }
     }
   }
 
-  if (persona.skills) {
-    const deps = Object.entries(persona.skills);
+  const skills = frontmatter.skillbase?.skills;
+  if (skills) {
+    const deps = Object.entries(skills);
     if (deps.length > 0) {
       lines.push("");
       lines.push("dependencies:");
@@ -245,7 +280,14 @@ async function personaInfoCommand(name: string): Promise<void> {
     }
   }
 
-  note(lines.join("\n"), `${persona.name}@${persona.version}`);
+  if (body) {
+    lines.push("");
+    lines.push("---");
+    lines.push(body.slice(0, 500));
+    if (body.length > 500) lines.push("...");
+  }
+
+  note(lines.join("\n"), `${frontmatter.author}/${frontmatter.name}@${frontmatter.version}`);
 }
 
 async function personaValidateCommand(filePath: string): Promise<void> {
@@ -253,34 +295,40 @@ async function personaValidateCommand(filePath: string): Promise<void> {
 
   try {
     const raw = await fs.readFile(resolved, "utf-8");
-    const data = JSON.parse(raw);
-    const result = validatePersonaManifest(data);
 
-    if (result.valid) {
-      log.success(`Valid persona manifest: ${resolved}`);
-    } else {
-      exitError(`Invalid persona manifest: ${resolved}\n${result.errors.map((e) => `  ${e}`).join("\n")}`);
+    if (resolved.endsWith(".md")) {
+      const parsed = parseSoul(raw);
+      const result = validateSoulFrontmatter(parsed.frontmatter);
+      if (result.valid) {
+        log.success(`Valid SOUL.md: ${resolved}`);
+      } else {
+        exitError(`Invalid SOUL.md: ${resolved}\n${result.errors.map((e) => `  ${e}`).join("\n")}`);
+      }
+      return;
     }
+
+    exitError(`Unsupported file format. Expected SOUL.md.`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     exitError(`Failed to read/parse ${resolved}: ${message}`);
   }
 }
 
-// --- Export / Deploy / Import helpers ---
+// --- Export / Deploy helpers ---
 
 function supportedTargetsList(): string {
   return getAllTargetIds().join(", ");
 }
 
 async function resolvePersonaSkills(
-  persona: PersonaManifest,
+  persona: ParsedSoul,
 ): Promise<LoadedSkill[]> {
-  if (!persona.skills) return [];
+  const skills = persona.frontmatter.skillbase?.skills;
+  if (!skills) return [];
   const index = await getSkillIndex();
   const loaded: LoadedSkill[] = [];
 
-  for (const ref of Object.keys(persona.skills)) {
+  for (const ref of Object.keys(skills)) {
     const entry = findSkill(index, ref);
     if (entry) {
       loaded.push(await loadSkill(entry));
@@ -308,7 +356,7 @@ async function personaExportCommand(
   }
 
   const skills = await resolvePersonaSkills(persona);
-  const outputDir = options.output ?? `./${name}-${options.format}`;
+  const outputDir = options.output ?? `./${persona.frontmatter.name}-${options.format}`;
 
   const result = await target.export(persona, skills, {
     outputDir: path.resolve(outputDir),
@@ -348,7 +396,7 @@ async function personaDeployCommand(
   }
 
   const skills = await resolvePersonaSkills(persona);
-  const agentId = options.agentId ?? name;
+  const agentId = options.agentId ?? persona.frontmatter.name;
 
   const result = await target.deploy(persona, skills, {
     agentId,
@@ -393,7 +441,6 @@ async function personaImportCommand(options: {
 
   let workspacePath = options.workspace;
 
-  // Resolve workspace from agent ID via openclaw.json
   if (!workspacePath && options.agentId) {
     const os = await import("node:os");
     const configPath = path.join(
@@ -412,9 +459,7 @@ async function personaImportCommand(options: {
       if (agent) {
         workspacePath = agent.workspace;
       }
-    } catch {
-      // Config not found
-    }
+    } catch { /* config not found */ }
   }
 
   if (!workspacePath) {
@@ -423,17 +468,17 @@ async function personaImportCommand(options: {
     );
   }
 
-  const persona = await target.import(path.resolve(workspacePath));
+  const legacy = await target.import(path.resolve(workspacePath));
 
   const outputPath =
-    options.output ?? path.resolve(`${persona.name}.person.json`);
+    options.output ?? path.resolve(`${legacy.name}.person.json`);
   await fs.writeFile(
     outputPath,
-    JSON.stringify(persona, null, 2) + "\n",
+    JSON.stringify(legacy, null, 2) + "\n",
     "utf-8",
   );
 
-  log.success(`Imported persona "${persona.name}" from ${target.name}.`);
+  log.success(`Imported persona "${legacy.name}" from ${target.name}.`);
   log.message(`Output: ${outputPath}`);
 }
 
@@ -446,7 +491,7 @@ export const command: CommandDef = {
   subcommands: [
     {
       name: "create",
-      description: "Create a new persona scaffold (.person.json)",
+      description: "Create a new persona scaffold (SOUL.md)",
       group: "personas",
       args: [{ name: "name", required: true }],
       handler: personaCreateCommand,
@@ -459,7 +504,7 @@ export const command: CommandDef = {
     },
     {
       name: "activate",
-      description: "Activate persona (auto-installs missing skills)",
+      description: "Activate persona (auto-installs from registry if needed)",
       group: "personas",
       args: [{ name: "name", required: true }],
       handler: personaActivateCommand,
@@ -479,14 +524,14 @@ export const command: CommandDef = {
     },
     {
       name: "remove",
-      description: "Remove a persona from global installation",
+      description: "Remove a persona",
       group: "personas",
       args: [{ name: "name", required: false }],
       handler: personaRemoveCommand,
     },
     {
       name: "validate",
-      description: "Validate a .person.json file",
+      description: "Validate a SOUL.md file",
       group: "personas",
       args: [{ name: "path", required: true }],
       handler: personaValidateCommand,
@@ -567,7 +612,7 @@ export const command: CommandDef = {
         },
         {
           flags: "-o, --output <path>",
-          description: "Output .person.json path",
+          description: "Output path",
         },
       ],
       handler: personaImportCommand,

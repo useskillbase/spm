@@ -14,12 +14,14 @@ export class RegistryClient {
     skillUrl(author, name) {
         return `${this.url}/api/skills/${author}/${name}`;
     }
-    async search(query, tag, page = 1) {
+    async search(query, tag, page = 1, type) {
         const params = new URLSearchParams();
         if (query)
             params.set("q", query);
         if (tag)
             params.set("tag", tag);
+        if (type)
+            params.set("type", type);
         params.set("page", String(page));
         const res = await fetch(`${this.url}/api/skills/search?${params}`, {
             headers: this.headers(),
@@ -62,6 +64,10 @@ export class RegistryClient {
     async publishWithArchive(metadata, archive) {
         const formData = new FormData();
         formData.append("metadata", JSON.stringify(metadata));
+        formData.append("content", metadata.content);
+        if (metadata.filename) {
+            formData.append("filename", metadata.filename);
+        }
         formData.append("archive", new Blob([archive]), "skill.tar.gz");
         const headers = {};
         if (this.token)

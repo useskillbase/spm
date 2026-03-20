@@ -29,7 +29,7 @@ async function main(): Promise<void> {
       const index = await writeIndex(dir);
       console.log(`Project index: ${index.skills.length} skill(s) → ${dir}/index.json`);
     } else if (target === "project") {
-      console.log("No .skills/installed/ directory found in current project.");
+      console.log("No .spm/installed/ directory found in current project.");
     }
   }
 }

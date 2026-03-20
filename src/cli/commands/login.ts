@@ -47,16 +47,19 @@ async function saveTokenToConfig(
   token: string,
 ): Promise<string> {
   const config = await readConfig();
-  const registryName = resolveRegistryName(registryUrl);
 
   const existingIdx = config.registries.findIndex((r) => r.url === registryUrl);
   if (existingIdx >= 0) {
     config.registries[existingIdx].token = token;
-  } else {
-    config.registries.push({ name: registryName, url: registryUrl, token });
+    const registryName = config.registries[existingIdx].name;
+    await writeConfig(config);
+    return registryName;
   }
 
-  if (!config.scopes["*"] || config.scopes["*"] === "public") {
+  const registryName = resolveRegistryName(registryUrl);
+  config.registries.push({ name: registryName, url: registryUrl, token });
+
+  if (!config.scopes["*"]) {
     config.scopes["*"] = registryName;
   }
 
@@ -71,7 +74,7 @@ async function resolveRegistryUrl(
 
   const config = await readConfig();
   if (config.registries.length === 0) {
-    exitError("No registries configured. Specify a registry URL or run: skills registry add <url>");
+    exitError("No registries configured. Specify a registry URL or run: spm registry add <url>");
   }
   if (config.registries.length === 1) {
     return config.registries[0].url;
@@ -124,7 +127,7 @@ async function loginWithName(
     const registryName = await saveTokenToConfig(registryUrl, result.token);
 
     log.info(`Token saved to config (registry: ${registryName})`);
-    log.message("You can now publish skills with: skills publish <path>");
+    log.message("You can now publish skills with: spm publish <path>");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     exitError(`Login failed: ${message}`);
@@ -178,7 +181,7 @@ async function loginWithGithub(registryUrl: string): Promise<void> {
         const registryName = await saveTokenToConfig(registryUrl, poll.token);
 
         log.info(`Token saved to config (registry: ${registryName})`);
-        log.message("You can now publish skills with: skills publish <path>");
+        log.message("You can now publish skills with: spm publish <path>");
         return;
       }
 

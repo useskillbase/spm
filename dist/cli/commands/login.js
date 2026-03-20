@@ -40,15 +40,16 @@ function resolveRegistryName(registryUrl) {
 }
 async function saveTokenToConfig(registryUrl, token) {
     const config = await readConfig();
-    const registryName = resolveRegistryName(registryUrl);
     const existingIdx = config.registries.findIndex((r) => r.url === registryUrl);
     if (existingIdx >= 0) {
         config.registries[existingIdx].token = token;
+        const registryName = config.registries[existingIdx].name;
+        await writeConfig(config);
+        return registryName;
     }
-    else {
-        config.registries.push({ name: registryName, url: registryUrl, token });
-    }
-    if (!config.scopes["*"] || config.scopes["*"] === "public") {
+    const registryName = resolveRegistryName(registryUrl);
+    config.registries.push({ name: registryName, url: registryUrl, token });
+    if (!config.scopes["*"]) {
         config.scopes["*"] = registryName;
     }
     await writeConfig(config);
@@ -59,7 +60,7 @@ async function resolveRegistryUrl(registryUrl) {
         return registryUrl;
     const config = await readConfig();
     if (config.registries.length === 0) {
-        exitError("No registries configured. Specify a registry URL or run: skills registry add <url>");
+        exitError("No registries configured. Specify a registry URL or run: spm registry add <url>");
     }
     if (config.registries.length === 1) {
         return config.registries[0].url;
@@ -97,7 +98,7 @@ async function loginWithName(registryUrl, name) {
         log.success(`Registered as "${result.author.name}" (id: ${result.author.id})`);
         const registryName = await saveTokenToConfig(registryUrl, result.token);
         log.info(`Token saved to config (registry: ${registryName})`);
-        log.message("You can now publish skills with: skills publish <path>");
+        log.message("You can now publish skills with: spm publish <path>");
     }
     catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -134,7 +135,7 @@ async function loginWithGithub(registryUrl) {
                 s.stop(`Authenticated as "${poll.author.name}" (id: ${poll.author.id})`);
                 const registryName = await saveTokenToConfig(registryUrl, poll.token);
                 log.info(`Token saved to config (registry: ${registryName})`);
-                log.message("You can now publish skills with: skills publish <path>");
+                log.message("You can now publish skills with: spm publish <path>");
                 return;
             }
             if (poll.interval) {

@@ -55,7 +55,7 @@ export async function createServer() {
     // Build persona section for instructions
     const personas = await listPersonas();
     const personaIndex = personas.length > 0
-        ? `\n\nAvailable personas: ${personas.map((p) => `@${p.name}`).join(", ")}\nWhen the user mentions a persona with @ (e.g. "@${personas[0]?.name}"), immediately call persona_load with that name. You can also use persona_load directly.`
+        ? `\n\nAvailable personas: ${personas.map((p) => `${p.name} (${p.author}/${p.name})`).join(", ")}\nWhen the user mentions a persona by name (e.g. "@${personas[0]?.name}"), call persona_load with that name.`
         : "";
     // If active persona is set, inject its character into instructions
     let activePersonaInstructions = "";
@@ -63,7 +63,7 @@ export async function createServer() {
     if (activePersona) {
         activePersonaInstructions =
             "\n\n" +
-                buildCharacterInstructions(activePersona.character, activePersona.settings);
+                buildCharacterInstructions(activePersona);
     }
     const server = new McpServer({
         name: "skillbase",
@@ -102,6 +102,9 @@ function registerTools(server, config, loadedSkills) {
     }
     if (config.tools.persona_load) {
         registerPersonaLoad(server);
+    }
+    if (config.tools.persona_install) {
+        registerPersonaInstall(server, config);
     }
     if (config.tools.skill_exec) {
         registerProxyTools(server, loadedSkills);
@@ -434,7 +437,7 @@ function registerPersonaList(server) {
                 content: [
                     {
                         type: "text",
-                        text: "No personas installed. Use `spm persona install <path>` to install a .person.json file.",
+                        text: "No personas installed. Use `spm add author/persona-name` to install from registry or `spm persona create <name>` to create one.",
                     },
                 ],
             };
@@ -451,7 +454,7 @@ function registerPersonaList(server) {
 }
 function registerPersonaLoad(server) {
     server.tool("persona_load", "Activates a persona by name. Returns the persona's character instructions for you to adopt. Skills from the persona's dependencies are already installed and available via skill_load — do NOT load them all at once, use them as needed.", {
-        name: z.string().describe("Persona name, e.g. 'code-reviewer'"),
+        name: z.string().describe("Persona name (e.g. 'defi-analyst') or full reference ('author/defi-analyst')"),
     }, async ({ name }) => {
         const persona = await readPersona(name);
         if (!persona) {
@@ -465,16 +468,19 @@ function registerPersonaLoad(server) {
                 isError: true,
             };
         }
-        const characterText = buildCharacterInstructions(persona.character, persona.settings);
+        const characterText = buildCharacterInstructions(persona);
+        const { frontmatter } = persona;
+        const skillbaseSkills = frontmatter.skillbase?.skills;
+        const skillbaseSettings = frontmatter.skillbase?.settings;
         const metadata = {
-            name: persona.name,
-            version: persona.version,
-            description: persona.description,
-            skills: persona.skills
-                ? Object.keys(persona.skills)
+            name: `${frontmatter.author}/${frontmatter.name}`,
+            version: frontmatter.version,
+            description: frontmatter.description,
+            skills: skillbaseSkills
+                ? Object.keys(skillbaseSkills)
                 : [],
-            settings: persona.settings ?? null,
-            settings_note: persona.settings
+            settings: skillbaseSettings ?? null,
+            settings_note: skillbaseSettings
                 ? "Settings like temperature may not be applied if the client does not support runtime changes. Character instructions compensate via prompt."
                 : undefined,
         };
@@ -490,6 +496,85 @@ function registerPersonaLoad(server) {
                 },
             ],
         };
+    });
+}
+function registerPersonaInstall(server, config) {
+    server.tool("persona_install", "Installs a persona from a remote registry. REQUIRES user confirmation before calling. Pass the persona reference as 'author/name'.", {
+        name: z
+            .string()
+            .describe("Persona reference to install, e.g. 'author/persona-name'"),
+        version: z
+            .string()
+            .optional()
+            .describe("Specific version to install (latest if omitted)"),
+    }, async ({ name, version }) => {
+        const client = getClientForSkill(config, name);
+        if (!client) {
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: `No registry configured for "${name}". The user needs to add a registry first.`,
+                    },
+                ],
+                isError: true,
+            };
+        }
+        try {
+            const slashIdx = name.indexOf("/");
+            if (slashIdx === -1) {
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: `Invalid persona reference: ${name}. Expected author/name.`,
+                        },
+                    ],
+                    isError: true,
+                };
+            }
+            const author = name.slice(0, slashIdx);
+            const personaName = name.slice(slashIdx + 1);
+            const data = await client.getContent(author, personaName, version);
+            const nodeFs = await import("node:fs/promises");
+            const nodePath = await import("node:path");
+            const { getGlobalSkillsDir, getInstalledDir } = await import("../core/paths.js");
+            const { writeIndex } = await import("../core/indexer.js");
+            const { writeLock } = await import("../core/lock.js");
+            const skillsDir = getGlobalSkillsDir();
+            const installedDir = getInstalledDir(skillsDir);
+            const dest = nodePath.join(installedDir, author, personaName);
+            await nodeFs.rm(dest, { recursive: true, force: true });
+            await nodeFs.mkdir(dest, { recursive: true });
+            await nodeFs.writeFile(nodePath.join(dest, "SOUL.md"), data.content, "utf-8");
+            await writeIndex(skillsDir);
+            await writeLock(skillsDir);
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: JSON.stringify({
+                            installed: true,
+                            name: `${author}/${data.name}`,
+                            version: data.version,
+                            tokens_estimate: data.tokens_estimate,
+                        }),
+                    },
+                ],
+            };
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: `Failed to install persona "${name}": ${message}`,
+                    },
+                ],
+                isError: true,
+            };
+        }
     });
 }
 //# sourceMappingURL=server.js.map
