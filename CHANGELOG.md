@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-20
+
 ### Added
 
 - **`skillbase.json` workspace manifest** — new project manifest format with `schema_version`, `skills`, `personas`, `registry` fields
