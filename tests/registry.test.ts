@@ -41,4 +41,29 @@ describe("findSkill", () => {
     expect(findSkill(index, "doc")).toBeUndefined();
     expect(findSkill(index, "docx-extra")).toBeUndefined();
   });
+
+  it("finds skill by short name (without author prefix)", () => {
+    const index = makeIndex(
+      makeEntry("skillbase/python-backend", 80),
+      makeEntry("skillbase/ts", 70),
+    );
+    const found = findSkill(index, "python-backend");
+    expect(found).toBeDefined();
+    expect(found!.name).toBe("skillbase/python-backend");
+  });
+
+  it("prefers exact match over short name fallback", () => {
+    const index = makeIndex(
+      makeEntry("python-backend", 90),
+      makeEntry("skillbase/python-backend", 80),
+    );
+    const found = findSkill(index, "python-backend");
+    expect(found).toBeDefined();
+    expect(found!.name).toBe("python-backend");
+  });
+
+  it("does not use short name fallback when name contains slash", () => {
+    const index = makeIndex(makeEntry("skillbase/python-backend", 80));
+    expect(findSkill(index, "other/python-backend")).toBeUndefined();
+  });
 });

@@ -51,5 +51,14 @@ export async function getSkillIndex(options: RegistryOptions = {}): Promise<Skil
 }
 
 export function findSkill(index: SkillIndex, name: string): IndexSkillEntry | undefined {
-  return index.skills.find((s) => s.name === name);
+  // Exact match first (e.g. "skillbase/python-backend")
+  const exact = index.skills.find((s) => s.name === name);
+  if (exact) return exact;
+
+  // Fallback: match by short name (e.g. "python-backend" → "skillbase/python-backend")
+  if (!name.includes("/")) {
+    return index.skills.find((s) => s.name.endsWith(`/${name}`));
+  }
+
+  return undefined;
 }

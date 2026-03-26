@@ -39,6 +39,14 @@ export async function getSkillIndex(options = {}) {
     return { version: "1.0.0", skills };
 }
 export function findSkill(index, name) {
-    return index.skills.find((s) => s.name === name);
+    // Exact match first (e.g. "skillbase/python-backend")
+    const exact = index.skills.find((s) => s.name === name);
+    if (exact)
+        return exact;
+    // Fallback: match by short name (e.g. "python-backend" → "skillbase/python-backend")
+    if (!name.includes("/")) {
+        return index.skills.find((s) => s.name.endsWith(`/${name}`));
+    }
+    return undefined;
 }
 //# sourceMappingURL=registry.js.map
