@@ -90,6 +90,7 @@ export function getRegistryToken(
   config: SkillsConfig,
   registryName: string,
 ): string | undefined {
+  if (process.env.SPM_TOKEN) return process.env.SPM_TOKEN;
   const registry = config.registries.find((r) => r.name === registryName);
   return registry?.token;
 }

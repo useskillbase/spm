@@ -298,7 +298,8 @@ export class RegistryClient {
 export function createRegistryClients(config: SkillsConfig): Map<string, RegistryClient> {
   const clients = new Map<string, RegistryClient>();
   for (const reg of config.registries) {
-    clients.set(reg.name, new RegistryClient(reg.url, reg.token));
+    const token = process.env.SPM_TOKEN ?? reg.token;
+    clients.set(reg.name, new RegistryClient(reg.url, token));
   }
   return clients;
 }
@@ -313,5 +314,6 @@ export function getClientForSkill(
   const reg = config.registries.find((r) => r.name === registryName);
   if (!reg) return null;
 
-  return new RegistryClient(reg.url, reg.token);
+  const token = process.env.SPM_TOKEN ?? reg.token;
+  return new RegistryClient(reg.url, token);
 }
