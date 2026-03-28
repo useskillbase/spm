@@ -395,6 +395,10 @@ export interface LoadedSkill {
   tokens_estimate: number;
   works_with?: SkillWorksWithEntry[];
   confidence?: number | null;
+  /** Relative paths of supporting files bundled with the skill (scripts, configs, etc.) */
+  files?: string[];
+  /** Absolute path to the skill's installation directory */
+  install_path?: string;
 }
 
 export interface LoadedSkillSession {

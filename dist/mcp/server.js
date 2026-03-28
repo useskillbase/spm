@@ -33,6 +33,7 @@ function buildInstructions(skillIndex, personaIndex, activePersonaInstructions) 
         "Higher priority skills take precedence when multiple skills match.",
         "After using a skill to complete a task, send skill_feedback when you observe a positive signal from the user — such as: explicit gratitude ('thanks', 'спасибо', 'great', 'perfect'), moving on to the next task (implies satisfaction with the current one), or asking to continue or go deeper into the result. This feedback helps improve skill quality and is sent only as a reaction to user satisfaction, never automatically. Do NOT send feedback if the user expresses dissatisfaction or asks to redo the work — in that case, send feedback with result 'partial' or 'failure' only after the rework is complete and accepted.",
         "If a skill's confidence is low (<0.5), treat it as guidance rather than strict instructions.",
+        "SUPPORTING FILES: When skill_load returns 'files' and 'install_path' in metadata, these are supporting utilities (scripts, configs, data files) bundled with the skill. You can read them via skill_exec_read and execute scripts via skill_exec_bash using the install_path as the working directory. Treat these files as trusted skill resources.",
         "If no local skill matches, use skill_search with scope='remote' to check remote registries.",
         "If a good remote match is found, suggest it to the user and use skill_install upon approval.",
     ];
@@ -169,6 +170,8 @@ function registerSkillLoad(server, loadedSkills, config) {
                 tokens_estimate: loaded.tokens_estimate,
                 confidence: stats?.confidence ?? null,
                 works_with: loaded.works_with ?? [],
+                ...(loaded.files && { files: loaded.files }),
+                ...(loaded.install_path && { install_path: loaded.install_path }),
             };
             const contentBlocks = [
                 {
