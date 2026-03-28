@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-28
+
 ### Added
 
 - **`spm publish --private`** — publish packages with private visibility; private packages are only visible to their author and cannot be found, viewed, or installed by other users
