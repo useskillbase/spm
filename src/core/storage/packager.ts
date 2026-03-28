@@ -20,6 +20,24 @@ const IGNORED_PATTERNS = [
   "Thumbs.db",
 ];
 
+// Extensions blocked from skill packages (binary / non-text)
+const BLOCKED_EXTENSIONS = new Set([
+  ".exe", ".dll", ".so", ".dylib", ".bin", ".com", ".bat", ".cmd",
+  ".msi", ".deb", ".rpm", ".dmg", ".app", ".apk", ".ipa",
+  ".class", ".pyc", ".pyo", ".o", ".obj", ".a", ".lib",
+  ".wasm", ".beam",
+  ".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar",
+  ".jar", ".war", ".ear",
+  ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp",
+  ".tiff", ".tif", ".psd",
+  ".mp3", ".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv",
+  ".wav", ".ogg", ".flac", ".aac",
+  ".ttf", ".otf", ".woff", ".woff2", ".eot",
+  ".db", ".sqlite", ".sqlite3", ".mdb",
+  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+  ".node", ".napi",
+]);
+
 const SENSITIVE_PATTERNS = [
   ".env",
   ".env.*",
@@ -80,12 +98,34 @@ async function loadSkillIgnore(skillDir: string): Promise<string[]> {
   }
 }
 
+function hasBlockedExtension(relativePath: string): boolean {
+  const base = relativePath.split("/").pop() ?? relativePath;
+  const dotIndex = base.lastIndexOf(".");
+  if (dotIndex <= 0) return false;
+  return BLOCKED_EXTENSIONS.has(base.slice(dotIndex).toLowerCase());
+}
+
+function isBinaryBuffer(buf: Buffer): boolean {
+  if (buf.length === 0) return false;
+  const sample = buf.subarray(0, Math.min(512, buf.length));
+  let nonText = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const b = sample[i];
+    if (b === 0 || (b < 0x07) || (b > 0x0d && b < 0x20 && b !== 0x1b)) {
+      nonText++;
+    }
+  }
+  return nonText / sample.length > 0.1;
+}
+
 function shouldInclude(relativePath: string, extraIgnore: string[]): boolean {
   const parts = relativePath.split(path.sep);
 
   if (parts.some((p) => IGNORED_PATTERNS.includes(p))) return false;
 
   if (isSensitive(relativePath)) return false;
+
+  if (hasBlockedExtension(relativePath)) return false;
 
   for (const pattern of extraIgnore) {
     const fileName = parts[parts.length - 1];
@@ -116,7 +156,9 @@ async function collectFiles(
         files.set(k, v);
       }
     } else if (entry.isFile()) {
-      files.set(relativePath, await fs.readFile(fullPath));
+      const content = await fs.readFile(fullPath);
+      if (isBinaryBuffer(content)) continue; // skip binary files silently
+      files.set(relativePath, content);
     }
     // Symlinks are intentionally skipped
   }
