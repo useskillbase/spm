@@ -1,4 +1,4 @@
-import type { SkillsConfig, RemoteSkillEntry, RegistrySearchResult, SkillManifest } from "../types/index.js";
+import type { SkillsConfig, RemoteSkillEntry, RegistrySearchResult, MineSkillsResult, SkillManifest } from "../types/index.js";
 export interface PublishResult {
     published: boolean;
     name: string;
@@ -41,18 +41,21 @@ export declare class RegistryClient {
             ref?: string;
             path?: string;
         };
+        visibility?: "public" | "private";
     }): Promise<PublishResult>;
     publishWithArchive(metadata: {
         manifest: SkillManifest;
         content: string;
         compact_content?: string;
         filename?: string;
+        visibility?: "public" | "private";
     }, archive: Buffer): Promise<PublishResult>;
     getDownloadUrl(author: string, name: string, version?: string): Promise<DownloadResult>;
     getVersions(author: string, name: string): Promise<{
         version: string;
         created_at: string;
     }[]>;
+    getMine(page?: number, type?: "skill" | "persona"): Promise<MineSkillsResult>;
     startDeviceAuth(): Promise<{
         session_id: string;
         user_code: string;

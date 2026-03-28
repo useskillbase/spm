@@ -2,6 +2,7 @@ import type {
   SkillsConfig,
   RemoteSkillEntry,
   RegistrySearchResult,
+  MineSkillsResult,
   SkillManifest,
 } from "../types/index.js";
 
@@ -99,6 +100,7 @@ export class RegistryClient {
     content: string;
     compact_content?: string;
     source?: { type: "github"; url: string; ref?: string; path?: string };
+    visibility?: "public" | "private";
   }): Promise<PublishResult> {
     const res = await fetch(`${this.url}/api/skills`, {
       method: "POST",
@@ -119,12 +121,16 @@ export class RegistryClient {
     content: string;
     compact_content?: string;
     filename?: string;
+    visibility?: "public" | "private";
   }, archive: Buffer): Promise<PublishResult> {
     const formData = new FormData();
     formData.append("metadata", JSON.stringify(metadata));
     formData.append("content", metadata.content);
     if (metadata.filename) {
       formData.append("filename", metadata.filename);
+    }
+    if (metadata.visibility === "private") {
+      formData.append("visibility", "private");
     }
     formData.append(
       "archive",
@@ -180,6 +186,23 @@ export class RegistryClient {
       versions: { version: string; created_at: string }[];
     };
     return data.versions;
+  }
+
+  async getMine(page = 1, type?: "skill" | "persona"): Promise<MineSkillsResult> {
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    if (type) params.set("type", type);
+
+    const res = await fetch(`${this.url}/api/skills/mine?${params}`, {
+      headers: this.headers(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(
+        `Failed to fetch packages: ${res.status} ${(err as { error?: string }).error ?? res.statusText}`,
+      );
+    }
+    return (await res.json()) as MineSkillsResult;
   }
 
   async startDeviceAuth(): Promise<{

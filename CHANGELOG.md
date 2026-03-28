@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`spm publish --private`** — publish packages with private visibility; private packages are only visible to their author and cannot be found, viewed, or installed by other users
+
+### Changed
+
+- **Publishing rules enforced** — maximum package size of 50 KB; binary files and obfuscated code are rejected; versions are immutable (cannot be overwritten); new versions must be strictly greater than the latest (semver)
+
 ## [0.5.1] - 2026-03-26
 
 ## [0.5.0] - 2026-03-20

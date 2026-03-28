@@ -68,6 +68,9 @@ export class RegistryClient {
         if (metadata.filename) {
             formData.append("filename", metadata.filename);
         }
+        if (metadata.visibility === "private") {
+            formData.append("visibility", "private");
+        }
         formData.append("archive", new Blob([archive]), "skill.tar.gz");
         const headers = {};
         if (this.token)
@@ -100,6 +103,20 @@ export class RegistryClient {
             throw new Error(`Failed to fetch versions: ${res.status}`);
         const data = (await res.json());
         return data.versions;
+    }
+    async getMine(page = 1, type) {
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        if (type)
+            params.set("type", type);
+        const res = await fetch(`${this.url}/api/skills/mine?${params}`, {
+            headers: this.headers(),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(`Failed to fetch packages: ${res.status} ${err.error ?? res.statusText}`);
+        }
+        return (await res.json());
     }
     async startDeviceAuth() {
         const res = await fetch(`${this.url}/auth/github/device`, {

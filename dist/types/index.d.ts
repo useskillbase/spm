@@ -291,8 +291,25 @@ export interface RemoteSkillEntry {
     confidence: number | null;
     safety_status: string;
     safety_score: number | null;
+    visibility?: "public" | "private";
     created_at: string;
     updated_at: string;
+}
+export interface MineSkillEntry {
+    name: string;
+    version: string;
+    description: string;
+    package_type: "skill" | "persona";
+    visibility: "public" | "private";
+    installs: number;
+    views: number;
+    updated_at: string;
+}
+export interface MineSkillsResult {
+    skills: MineSkillEntry[];
+    total: number;
+    page: number;
+    per_page: number;
 }
 export interface PublishRequest {
     content: string;

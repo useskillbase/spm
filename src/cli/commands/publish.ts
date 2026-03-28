@@ -24,16 +24,19 @@ export const command: CommandDef = {
     { flags: "--github", description: "Source is a GitHub URL" },
     { flags: "--dry-run", description: "Show what would happen without executing" },
     { flags: "--all", description: "Publish all packages found in subdirectories (max 1000)" },
+    { flags: "--private", description: "Publish as a private package (requires Pro plan)" },
   ],
   handler: publishCommand,
 };
 
 export async function publishCommand(
   source: string | undefined,
-  options: { registry?: string; github?: boolean; dryRun?: boolean; all?: boolean },
+  options: { registry?: string; github?: boolean; dryRun?: boolean; all?: boolean; private?: boolean },
 ): Promise<void> {
+  const visibility = options.private ? "private" as const : undefined;
+
   if (options.all) {
-    await publishAll(options);
+    await publishAll(options, visibility);
     return;
   }
 
@@ -58,6 +61,7 @@ export async function publishCommand(
         ref: ghSource.ref,
         path: ghSource.path,
       },
+      visibility,
     });
 
     s.stop(
@@ -69,7 +73,7 @@ export async function publishCommand(
   }
 
   try {
-    await publishOne(source, client, reg, options.dryRun);
+    await publishOne(source, client, reg, options.dryRun, visibility);
   } catch (err) {
     exitError(err instanceof Error ? err.message : String(err));
   }
@@ -118,6 +122,7 @@ async function publishOne(
   client: RegistryClient,
   reg: RegistryEntry,
   dryRun?: boolean,
+  visibility?: "private",
 ): Promise<{ name: string; version: string; updated: boolean }> {
   const pkgDir = path.resolve(source);
   const { filename, isPersona } = await detectEntryFile(pkgDir);
@@ -215,8 +220,9 @@ async function publishOne(
 
   if (dryRun) {
     s.stop("Done (dry-run)");
+    const visLabel = visibility === "private" ? "\nVisibility: private" : "";
     note(
-      `Would publish ${typeLabel} ${manifest.name}@${manifest.version} to ${reg.name}\nPackage size: ${formatSize(pkg.size)} (${pkg.filesCount} files)\nIntegrity: ${pkg.integrity}`,
+      `Would publish ${typeLabel} ${manifest.name}@${manifest.version} to ${reg.name}\nPackage size: ${formatSize(pkg.size)} (${pkg.filesCount} files)\nIntegrity: ${pkg.integrity}${visLabel}`,
       "Dry run",
     );
     return { name: manifest.name, version: manifest.version, updated: false };
@@ -227,7 +233,7 @@ async function publishOne(
   let result: Awaited<ReturnType<typeof client.publishWithArchive>>;
   try {
     result = await client.publishWithArchive(
-      { manifest, content: raw, filename },
+      { manifest, content: raw, filename, visibility },
       pkg.data,
     );
   } catch (err) {
@@ -270,6 +276,7 @@ async function discoverPackageDirs(baseDir: string): Promise<string[]> {
 
 async function publishAll(
   options: { registry?: string; dryRun?: boolean },
+  visibility?: "private",
 ): Promise<void> {
   const baseDir = process.cwd();
   const pkgDirs = await discoverPackageDirs(baseDir);
@@ -292,7 +299,7 @@ async function publishAll(
 
   for (const dir of pkgDirs) {
     try {
-      const result = await publishOne(dir, client, reg, options.dryRun);
+      const result = await publishOne(dir, client, reg, options.dryRun, visibility);
       if (result.updated) {
         updated++;
       } else {

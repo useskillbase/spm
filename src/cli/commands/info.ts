@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getSkillIndex, findSkill } from "../../core/registry.js";
+import { readConfig } from "../../core/config.js";
+import { RegistryClient } from "../../core/registry-client.js";
 import { parseSkill } from "../../core/skill-parser.js";
 import { note, exitError } from "../ui.js";
 import type { CommandDef } from "../command.js";
@@ -23,6 +25,28 @@ export async function infoCommand(name: string): Promise<void> {
 
   const lines: string[] = [];
 
+  // Try to fetch visibility from registry
+  let visibility: string | undefined;
+  const slashIdx = entry.name.indexOf("/");
+  if (slashIdx !== -1) {
+    try {
+      const config = await readConfig();
+      const registryName = config.scopes["*"];
+      const reg = registryName ? config.registries.find((r) => r.name === registryName) : undefined;
+      if (reg?.token) {
+        const client = new RegistryClient(reg.url, reg.token);
+        const author = entry.name.slice(0, slashIdx);
+        const skillName = entry.name.slice(slashIdx + 1);
+        const remote = await client.getSkill(author, skillName);
+        if (remote?.visibility) {
+          visibility = remote.visibility;
+        }
+      }
+    } catch {
+      // Registry unavailable — skip visibility
+    }
+  }
+
   // Read full metadata from SKILL.md
   try {
     const raw = await fs.readFile(entry.entry, "utf-8");
@@ -42,6 +66,9 @@ export async function infoCommand(name: string): Promise<void> {
 
     lines.push(`author:      ${fm.author}`);
     lines.push(`license:     ${fm.license}`);
+    if (visibility) {
+      lines.push(`visibility:  ${visibility}`);
+    }
     lines.push(`permissions: ${fm.security?.permissions.length ? fm.security.permissions.join(", ") : "none"}`);
 
     if (fm.works_with && fm.works_with.length > 0) {
@@ -62,6 +89,9 @@ export async function infoCommand(name: string): Promise<void> {
     lines.push(`priority:    ${entry.priority}`);
     lines.push(`tokens:      ~${entry.tokens_estimate}`);
     lines.push(`entry:       ${entry.entry}`);
+    if (visibility) {
+      lines.push(`visibility:  ${visibility}`);
+    }
   }
 
   note(lines.join("\n"), `${entry.name}@${entry.v}`);

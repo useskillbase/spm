@@ -61,8 +61,7 @@ A skill is a portable, versioned package containing prompts, tools, or instructi
 
 ```
 my-skill/
-├── skill.json    # Manifest (name, version, triggers, dependencies)
-└── SKILL.md      # Main prompt / instructions
+└── SKILL.md      # Everything: metadata (YAML frontmatter) + instructions
 ```
 
 ## Personas
@@ -117,6 +116,7 @@ spm persona deploy my-agent -t openclaw
 |---|---|
 | `spm search <query>` | Search local and remote registries |
 | `spm publish <path>` | Publish to registry |
+| `spm publish <path> --private` | Publish as a private package (requires Basic or Pro plan) |
 | `spm update <path>` | Update a published skill |
 | `spm login` | Authenticate (GitHub OAuth) |
 | `spm rate <name>` | Rate a skill (1-5) |
@@ -158,7 +158,18 @@ spm registry add https://registry.example.com
 
 # Publish
 spm publish ./my-skill
+
+# Publish as private
+spm publish ./my-skill --private
 ```
+
+### Publishing rules
+
+- Maximum package size: **50 KB**
+- Versions are immutable — once published, a version cannot be overwritten
+- New versions must be strictly greater than the latest (semver)
+- Binary files and obfuscated code are not allowed
+- All published content is automatically scanned for safety
 
 ## Requirements
 

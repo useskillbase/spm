@@ -5,5 +5,6 @@ export declare function publishCommand(source: string | undefined, options: {
     github?: boolean;
     dryRun?: boolean;
     all?: boolean;
+    private?: boolean;
 }): Promise<void>;
 //# sourceMappingURL=publish.d.ts.map

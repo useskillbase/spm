@@ -20,12 +20,14 @@ export const command = {
         { flags: "--github", description: "Source is a GitHub URL" },
         { flags: "--dry-run", description: "Show what would happen without executing" },
         { flags: "--all", description: "Publish all packages found in subdirectories (max 1000)" },
+        { flags: "--private", description: "Publish as a private package (requires Pro plan)" },
     ],
     handler: publishCommand,
 };
 export async function publishCommand(source, options) {
+    const visibility = options.private ? "private" : undefined;
     if (options.all) {
-        await publishAll(options);
+        await publishAll(options, visibility);
         return;
     }
     if (!source) {
@@ -46,6 +48,7 @@ export async function publishCommand(source, options) {
                 ref: ghSource.ref,
                 path: ghSource.path,
             },
+            visibility,
         });
         s.stop(result.updated
             ? `Updated ${result.name}@${result.version}`
@@ -53,7 +56,7 @@ export async function publishCommand(source, options) {
         return;
     }
     try {
-        await publishOne(source, client, reg, options.dryRun);
+        await publishOne(source, client, reg, options.dryRun, visibility);
     }
     catch (err) {
         exitError(err instanceof Error ? err.message : String(err));
@@ -91,7 +94,7 @@ async function detectEntryFile(dir) {
     catch { /* not found */ }
     throw new Error(`No SKILL.md or SOUL.md found in "${dir}".`);
 }
-async function publishOne(source, client, reg, dryRun) {
+async function publishOne(source, client, reg, dryRun, visibility) {
     const pkgDir = path.resolve(source);
     const { filename, isPersona } = await detectEntryFile(pkgDir);
     const raw = await fs.readFile(path.join(pkgDir, filename), "utf-8");
@@ -177,13 +180,14 @@ async function publishOne(source, client, reg, dryRun) {
     const pkg = await packSkill(pkgDir);
     if (dryRun) {
         s.stop("Done (dry-run)");
-        note(`Would publish ${typeLabel} ${manifest.name}@${manifest.version} to ${reg.name}\nPackage size: ${formatSize(pkg.size)} (${pkg.filesCount} files)\nIntegrity: ${pkg.integrity}`, "Dry run");
+        const visLabel = visibility === "private" ? "\nVisibility: private" : "";
+        note(`Would publish ${typeLabel} ${manifest.name}@${manifest.version} to ${reg.name}\nPackage size: ${formatSize(pkg.size)} (${pkg.filesCount} files)\nIntegrity: ${pkg.integrity}${visLabel}`, "Dry run");
         return { name: manifest.name, version: manifest.version, updated: false };
     }
     s.message(`Publishing ${typeLabel} ${manifest.name}@${manifest.version} to ${reg.name}...`);
     let result;
     try {
-        result = await client.publishWithArchive({ manifest, content: raw, filename }, pkg.data);
+        result = await client.publishWithArchive({ manifest, content: raw, filename, visibility }, pkg.data);
     }
     catch (err) {
         s.stop("Failed");
@@ -217,7 +221,7 @@ async function discoverPackageDirs(baseDir) {
     }
     return dirs.sort();
 }
-async function publishAll(options) {
+async function publishAll(options, visibility) {
     const baseDir = process.cwd();
     const pkgDirs = await discoverPackageDirs(baseDir);
     if (pkgDirs.length === 0) {
@@ -233,7 +237,7 @@ async function publishAll(options) {
     let failed = 0;
     for (const dir of pkgDirs) {
         try {
-            const result = await publishOne(dir, client, reg, options.dryRun);
+            const result = await publishOne(dir, client, reg, options.dryRun, visibility);
             if (result.updated) {
                 updated++;
             }
