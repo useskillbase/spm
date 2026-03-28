@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-03-28
+
 ### Added
 
 - **Supporting files listing in `skill_load`** — when a skill directory contains supporting files (scripts, configs, data files), `skill_load` now returns `files` (relative paths) and `install_path` (absolute directory path) in metadata, so the model knows what utilities are available and can access them via `skill_exec_read` / `skill_exec_bash`
