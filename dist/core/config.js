@@ -73,6 +73,8 @@ export function resolveRegistry(config, _skillRef) {
     return registry?.url ?? null;
 }
 export function getRegistryToken(config, registryName) {
+    if (process.env.SPM_TOKEN)
+        return process.env.SPM_TOKEN;
     const registry = config.registries.find((r) => r.name === registryName);
     return registry?.token;
 }

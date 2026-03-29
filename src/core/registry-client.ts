@@ -5,6 +5,7 @@ import type {
   MineSkillsResult,
   SkillManifest,
 } from "../types/index.js";
+import { SPM_VERSION } from "./version.js";
 
 // HTTP client for communicating with remote registry servers.
 
@@ -33,7 +34,10 @@ export class RegistryClient {
   ) {}
 
   private headers(): Record<string, string> {
-    const h: Record<string, string> = { "Content-Type": "application/json" };
+    const h: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-SPM-Version": SPM_VERSION,
+    };
     if (this.token) h["Authorization"] = `Bearer ${this.token}`;
     return h;
   }
@@ -138,7 +142,7 @@ export class RegistryClient {
       "skill.tar.gz",
     );
 
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { "X-SPM-Version": SPM_VERSION };
     if (this.token) headers["Authorization"] = `Bearer ${this.token}`;
 
     const res = await fetch(`${this.url}/api/skills`, {
