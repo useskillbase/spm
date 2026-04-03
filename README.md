@@ -1,180 +1,213 @@
-# Skillbase (spm)
+<p align="center">
+  <h1 align="center">spm</h1>
+  <p align="center">Skills Package Manager — install, share, and manage reusable AI skills across any MCP-compatible client.</p>
+</p>
 
-[![npm version](https://img.shields.io/npm/v/@skillbase/spm)](https://www.npmjs.com/package/@skillbase/spm)
-[![license](https://img.shields.io/npm/l/@skillbase/spm)](https://github.com/useskillbase/spm/blob/main/LICENSE)
-[![downloads](https://img.shields.io/npm/dm/@skillbase/spm)](https://www.npmjs.com/package/@skillbase/spm)
+<p align="center">
+  <a href="https://www.npmjs.com/package/@skillbase/spm"><img src="https://img.shields.io/npm/v/@skillbase/spm?color=blue" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@skillbase/spm"><img src="https://img.shields.io/npm/dm/@skillbase/spm" alt="npm downloads"></a>
+  <a href="https://github.com/useskillbase/spm/blob/main/LICENSE"><img src="https://img.shields.io/github/license/useskillbase/spm" alt="license"></a>
+</p>
 
-**AI skills manager** — install, publish, and deploy reusable prompts, personas, and MCP tools across 14 AI clients.
+---
 
-Think **npm for AI capabilities**: versioned packages of prompts, instructions, and tools that any LLM can use.
+## What is spm?
+
+spm is a package manager for AI skills. Skills are structured instructions — not code — that teach AI models how to perform specific tasks: code review, security audits, API design, prompt engineering, DeFi analysis, and more.
 
 ```bash
 npm install -g @skillbase/spm
 ```
 
-## Why Skillbase?
+spm connects to your AI client via [MCP](https://modelcontextprotocol.io) (Model Context Protocol), giving your AI access to a registry of community-contributed skills that load on demand.
 
-- **One command to connect** — `spm connect claude` wires up MCP for Claude, Cursor, VS Code, Zed, and 10 more clients
-- **Portable skills** — write once, use everywhere. Skills are model-agnostic packages with semver, dependencies, and a registry
-- **Personas** — define AI agent personalities with traits, model settings, and skill dependencies in a single `.person.json`
-- **Deploy targets** — export and deploy personas to external platforms (OpenClaw, more coming)
-- **Built-in MCP server** — skills auto-load into your AI client via Model Context Protocol
+Unlike npm-based approaches that piggyback on `node_modules`, spm has its own registry, its own format, and works with any AI client — not just code editors.
 
-## Supported AI Clients
-
-| Client | Connect command |
-|---|---|
-| Claude Desktop | `spm connect claude` |
-| Claude Code | `spm connect claude-code` |
-| Cursor | `spm connect cursor` |
-| VS Code (Copilot) | `spm connect vscode` |
-| Windsurf | `spm connect windsurf` |
-| Zed | `spm connect zed` |
-| JetBrains IDEs | `spm connect jetbrains` |
-| Cline | `spm connect cline` |
-| Roo Code | `spm connect roo-code` |
-| Continue | `spm connect continue` |
-| Amazon Q Developer | `spm connect amazonq` |
-| Gemini CLI | `spm connect gemini` |
-| OpenCode | `spm connect opencode` |
-| OpenClaw | `spm connect openclaw` |
-
-## Quick Start
+## Quick start
 
 ```bash
-# Initialize skills directory
+# Install
+npm install -g @skillbase/spm
+
+# Initialize in your project
 spm init
 
-# Search for skills
-spm search "code review"
+# Connect to your AI client
+spm connect claude       # Claude Desktop / Claude Code
+spm connect cursor       # Cursor
+spm connect vscode       # VS Code (Copilot)
+spm connect windsurf     # Windsurf
+spm connect jetbrains    # Any JetBrains IDE
 
 # Install a skill
-spm add author/skill-name
+spm add skillbase/arch-code-review
 
-# Connect to your AI client
-spm connect claude
+# Install a persona (a bundle of skills with a defined role)
+spm persona add skillbase/sec
 ```
 
-## What is a Skill?
+Once connected, your AI automatically discovers and loads skills when it encounters a matching task. No manual invocation needed.
 
-A skill is a portable, versioned package containing prompts, tools, or instructions that any AI model can use.
+## How it works
+
+spm registers as an MCP server. Your AI client gets five tools:
+
+| Tool | Purpose |
+|------|---------|
+| `skill_list` | Browse installed skills (compact index, not full content) |
+| `skill_load` | Load a skill's full instructions into context |
+| `skill_search` | Find skills by keyword, tag, or file pattern |
+| `skill_install` | Install new skills from the registry |
+| `skill_feedback` | Rate skill quality (feeds confidence scores) |
+
+**Lazy loading** is key to the design. The AI sees a lightweight index of all installed skills. When it encounters a task that matches a skill's trigger, it loads just that skill's full instructions. This keeps context windows clean and lets you install dozens of skills without overhead.
 
 ```
-my-skill/
-└── SKILL.md      # Everything: metadata (YAML frontmatter) + instructions
+User: "Review this pull request for architecture issues"
+  ↓
+AI sees skill_list → finds arch-code-review (trigger matches)
+  ↓
+AI calls skill_load("arch-code-review")
+  ↓
+Full review methodology loads into context
+  ↓
+AI performs structured code review
 ```
+
+## What's inside a skill?
+
+A skill is a directory. At its core is a `SKILL.md` file — structured Markdown with YAML frontmatter:
+
+```markdown
+---
+name: arch-code-review
+version: 1.0.3
+description: "Architecture-aware code review"
+tags: [code-review, architecture, solid, complexity]
+triggers:
+  - "code review"
+  - "architecture review"
+  - "pull request review"
+---
+
+# Code Review Methodology
+
+## Evaluation criteria
+- Coupling/cohesion at module and class level
+- SOLID principle adherence
+- Cyclomatic complexity hotspots
+...
+```
+
+But a skill isn't limited to instructions. The directory can also contain auxiliary scripts, templates, example files, and any other resources the AI needs during execution. Think of `SKILL.md` as `package.json` — it's the entry point, but the whole directory is the package.
+
+### Skill features
+
+- **Semver versioning** — `skillbase/arch-code-review@1.0.3`
+- **Dependencies** — skills can depend on other skills
+- **Auxiliary files** — scripts, templates, reference data bundled alongside instructions
+- **Triggers** — descriptions and file patterns that help the AI decide when to load
+- **Tags** — for search and discovery
+- **Confidence scores** — computed from real user feedback via `skill_feedback`
 
 ## Personas
 
-Define AI agent personalities with character traits, model settings, and skill dependencies:
+A persona bundles multiple skills into a complete AI identity with a defined role, tone, and expertise area.
 
 ```bash
-# Create a persona
-spm persona create my-agent
-
-# Activate (auto-installs missing skills)
-spm persona activate my-agent
-
-# Export to external platform
-spm persona export my-agent -f openclaw
-
-# Deploy
-spm persona deploy my-agent -t openclaw
+spm persona add skillbase/sec
 ```
 
-## Commands
+This installs the **Security Auditor** persona with its dependencies: `smart-contract-audit`, `appsec`, and `web3-threat-modeling`. When activated, the AI assumes the persona's role and has access to all bundled skills.
 
-### Manage Skills
+Available personas:
 
-| Command | Description |
-|---|---|
-| `spm add <ref>` | Install a skill |
-| `spm install` | Install all dependencies from skill.json |
-| `spm remove <ref>` | Remove a skill |
-| `spm create <name>` | Scaffold a new skill |
-| `spm link <path>` | Symlink a local skill for development |
-| `spm convert <file>` | Convert .md/.txt prompts into skills |
-| `spm list` | List installed skills |
-| `spm info <name>` | Show skill details |
-| `spm validate` | Validate a skill directory |
+| Persona | Role | Skills |
+|---------|------|--------|
+| `arch` | Software architect | system design, API contracts, code review |
+| `py` | Python backend engineer | FastAPI, async, testing, MongoDB/PostgreSQL |
+| `ts` | TypeScript fullstack dev | React/Next/Nuxt, Node, Tailwind, wagmi |
+| `sol` | Solidity/EVM developer | Foundry, OpenZeppelin, gas optimization |
+| `sec` | Security auditor | smart contract audit, AppSec, threat modeling |
+| `trader` | DeFi/crypto trader | on-chain analysis, yield strategies, MEV |
+| `growth` | Growth marketer | funnels, metrics, Web3 go-to-market |
+| `prompt-engineer` | Prompt engineer | SKILL.md authoring, prompt best practices |
+| `prompt-manager` | Prompt manager | skill demand research, quality review |
 
-### Personas
+## Registry
 
-| Command | Description |
-|---|---|
-| `spm persona create` | Create a new persona |
-| `spm persona list` | List installed personas |
-| `spm persona activate` | Activate persona (auto-installs skills) |
-| `spm persona deactivate` | Deactivate current persona |
-| `spm persona export` | Export to target platform format |
-| `spm persona deploy` | Deploy to target platform |
-| `spm persona import` | Import from external platform |
+The registry currently hosts 30+ skills across several domains:
 
-### Registry
+**Development** — `python-backend`, `python-testing`, `db-mongodb`, `arch-code-review`, `arch-api-design`, `arch-system-design`
 
-| Command | Description |
-|---|---|
-| `spm search <query>` | Search local and remote registries |
-| `spm publish <path>` | Publish to registry |
-| `spm publish <path> --private` | Publish as a private package (requires Basic or Pro plan) |
-| `spm update <path>` | Update a published skill |
-| `spm login` | Authenticate (GitHub OAuth) |
-| `spm rate <name>` | Rate a skill (1-5) |
-| `spm registry add <url>` | Add a remote registry |
+**Security** — `appsec`, `smart-contract-audit`, `web3-threat-modeling`, `prompt-injection-detector`, `jailbreak-scanner`, `prompt-safety-validator`
 
-### System
+**DeFi & Trading** — `yield-analysis`, `leverage-calc`, `onchain-signals`, `mev-awareness`, `trade-journal`
 
-| Command | Description |
-|---|---|
-| `spm connect <client>` | Connect MCP server to AI client |
-| `spm disconnect <client>` | Disconnect from AI client |
-| `spm serve` | Start MCP server (stdio) |
-| `spm init` | Initialize skills directory |
-| `spm reindex` | Rebuild skill index |
+**Growth & Strategy** — `defi-growth-strategy`, `growth-airdrop-design`, `web3-grant-writing`
 
-## MCP Server
+**Meta** — `prompt-engineering-craft` (learn to write better prompts and skills)
 
-Skillbase includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) server that exposes installed skills as tools to any MCP-compatible AI client:
+Browse the full registry: [skillbase.space/explore](https://skillbase.space/explore)
+
+## Publish your own skill
 
 ```bash
-spm serve --stdio
+# Scaffold a new skill
+spm create my-skill
+
+# Edit SKILL.md with your instructions
+# Add any auxiliary scripts or templates
+
+# Publish to the registry
+spm publish
 ```
 
-**MCP tools provided:** `skill_list`, `skill_load`, `skill_search`, `skill_context`, `skill_feedback`, `skill_install`, `persona_list`, `persona_load`
+Skills are free to publish and free to use. The registry is open.
 
-## Registries
+## Supported clients
 
-Skills can be published to self-hosted registries or installed directly from GitHub:
+spm works with any client that supports MCP:
+
+Claude Desktop, Claude Code, Cursor, VS Code (GitHub Copilot), Windsurf, Cline, Roo Code, JetBrains IDEs (all), Zed, Emacs, Neovim, and others.
 
 ```bash
-# Install from registry
-spm add author/skill-name
-
-# Install from GitHub
-spm add github:author/repo
-
-# Add a custom registry
-spm registry add https://registry.example.com
-
-# Publish
-spm publish ./my-skill
-
-# Publish as private
-spm publish ./my-skill --private
+# See all supported clients
+spm connect --list
 ```
 
-### Publishing rules
+## Why not just use npm?
 
-- Maximum package size: **50 KB**
-- Versions are immutable — once published, a version cannot be overwritten
-- New versions must be strictly greater than the latest (semver)
-- Binary files and obfuscated code are not allowed
-- All published content is automatically scanned for safety
+Some projects bundle AI skills inside npm packages. spm takes a different approach:
 
-## Requirements
+- **Own registry** — skills are first-class citizens, not a side-effect of npm install. Discovery, search, versioning, and confidence scores are built in.
+- **Not tied to Node.js** — spm skills work with any AI client on any platform. You don't need a `node_modules` folder.
+- **Lazy loading via MCP** — skills load into AI context on demand, not all at once. This is critical when you have dozens of skills.
+- **Feedback loop** — `skill_feedback` lets users rate skills. Confidence scores surface the most effective skills.
+- **Personas** — bundle skills into roles. npm has no concept of this.
+- **Extensible format** — a skill can grow from pure instructions to include scripts, templates, and data without changing how it's installed or loaded.
 
-- Node.js >= 20.0.0
+## Security
+
+All skills and personas in the public registry go through a security review before publication. Auxiliary files bundled with skills are scanned with antivirus and additional automated security tooling. spm uses token-scoped authorization for publishing — only verified authors can update their packages.
+
+The `SKILL.md` format is plain Markdown with structured metadata — there's no `postinstall` script execution or hidden side effects.
+
+## Contributing
+
+We welcome skills, bug reports, feature requests, and documentation improvements.
+
+- [Open an issue](https://github.com/useskillbase/spm/issues)
+- [Start a discussion](https://github.com/useskillbase/spm/discussions)
+- [Publish a skill](https://skillbase.space/docs/creating-skills)
+
+## Links
+
+- [skillbase.space](https://skillbase.space) — spm homepage and registry
+- [Skillbase Workspace](https://workspace.skillbase.space) — managed AI teams in the cloud (Teams as a Service)
+- [Documentation](https://skillbase.space/docs/getting-started)
+- [npm](https://www.npmjs.com/package/@skillbase/spm)
 
 ## License
 
-[MIT](LICENSE)
+MIT — see [LICENSE](LICENSE).
