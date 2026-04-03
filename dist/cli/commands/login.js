@@ -9,8 +9,7 @@ export const commands = [
         group: "registry",
         args: [{ name: "registry-url", required: false }],
         options: [
-            { flags: "--name <name>", description: "Your author name (for direct registration)" },
-            { flags: "--github", description: "Authenticate via GitHub OAuth" },
+            { flags: "--github", description: "Authenticate via GitHub OAuth (default)" },
         ],
         handler: loginCommand,
     },
@@ -81,29 +80,7 @@ async function resolveRegistryUrl(registryUrl) {
 }
 export async function loginCommand(registryUrl, options) {
     const url = await resolveRegistryUrl(registryUrl);
-    if (options.github) {
-        await loginWithGithub(url);
-    }
-    else {
-        await loginWithName(url, options.name);
-    }
-}
-async function loginWithName(registryUrl, name) {
-    if (!name) {
-        exitError("--name is required for direct registration.\nOr use --github to authenticate via GitHub.");
-    }
-    const client = new RegistryClient(registryUrl);
-    try {
-        const result = await client.register(name);
-        log.success(`Registered as "${result.author.name}" (id: ${result.author.id})`);
-        const registryName = await saveTokenToConfig(registryUrl, result.token);
-        log.info(`Token saved to config (registry: ${registryName})`);
-        log.message("You can now publish skills with: spm publish <path>");
-    }
-    catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        exitError(`Login failed: ${message}`);
-    }
+    await loginWithGithub(url);
 }
 function openBrowser(url) {
     const cmd = process.platform === "darwin"

@@ -1,3 +1,4 @@
+import { SPM_VERSION } from "./version.js";
 export class RegistryClient {
     url;
     token;
@@ -6,7 +7,10 @@ export class RegistryClient {
         this.token = token;
     }
     headers() {
-        const h = { "Content-Type": "application/json" };
+        const h = {
+            "Content-Type": "application/json",
+            "X-SPM-Version": SPM_VERSION,
+        };
         if (this.token)
             h["Authorization"] = `Bearer ${this.token}`;
         return h;
@@ -72,7 +76,7 @@ export class RegistryClient {
             formData.append("visibility", "private");
         }
         formData.append("archive", new Blob([archive]), "skill.tar.gz");
-        const headers = {};
+        const headers = { "X-SPM-Version": SPM_VERSION };
         if (this.token)
             headers["Authorization"] = `Bearer ${this.token}`;
         const res = await fetch(`${this.url}/api/skills`, {
