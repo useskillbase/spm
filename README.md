@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">spm</h1>
+  <h1 align="center">Skillbase / spm</h1>
   <p align="center">Skills Package Manager — install, share, and manage reusable AI skills across any MCP-compatible client.</p>
 </p>
 
