@@ -23,6 +23,8 @@ spm connects to your AI client via [MCP](https://modelcontextprotocol.io) (Model
 
 Unlike npm-based approaches that piggyback on `node_modules`, spm has its own registry, its own format, and works with any AI client — not just code editors.
 
+**Already using Vercel Skills?** spm is fully compatible — `spm add owner/repo/skill-name` and you're done. Auto-converts, no extra steps. [See details below.](#vercel-skills-compatibility)
+
 ## Quick start
 
 ```bash
@@ -150,16 +152,65 @@ The registry currently hosts 30+ skills across several domains:
 
 Browse the full registry: [skillbase.space/explore](https://skillbase.space/explore)
 
+## Vercel Skills compatibility
+
+spm is fully compatible with [Vercel Skills](https://github.com/vercel-labs/skills) and any GitHub-hosted skills that follow the same `SKILL.md` format. You don't have to choose — if a skill exists on GitHub, you can use it in spm.
+
+**Install directly** — one command, auto-converts and installs:
+
+```bash
+spm add vercel-labs/agent-skills/web-design-guidelines
+```
+
+That's it. spm fetches the skill from GitHub, detects the format, converts it to SPM on the fly, and installs it locally. Ready to use immediately — no flags, no extra steps.
+
+**Or convert first, then publish** — if you want to review, edit, and share with the community:
+
+```bash
+# 1. Fetch and convert to a local directory
+spm convert vercel-labs/agent-skills/web-design-guidelines -o ./
+
+# 2. Review and edit SKILL.md if needed
+# 3. Publish to the spm registry
+spm publish ./web-design-guidelines
+```
+
+Author defaults to the GitHub repo owner. Override with `--author <name>` if needed. The `--skill <name>` flag is also supported as an alternative: `spm add vercel-labs/agent-skills --skill web-design-guidelines`.
+
+**What spm adds on top of the original skill:**
+
+| Feature | Vercel Skills | With spm |
+|---------|--------------|----------|
+| Versioning | none | semver (`1.0.0`) |
+| Dependencies | not supported | skill-to-skill deps with resolution |
+| Lazy loading | none | on-demand via MCP |
+| Discovery | manual | auto-trigger by task, tags, file patterns |
+| Feedback & scoring | none | confidence scores from real usage |
+| Client support | select editors | any MCP client (15+) |
+| Personas | none | bundle skills into roles |
+
+You can also list all available skills in a repository before installing:
+
+```bash
+spm convert vercel-labs/agent-skills
+# → lists all skills in the repo's skills/ directory
+```
+
+Works with any GitHub repo that contains `SKILL.md` files — not limited to Vercel's repositories.
+
 ## Publish your own skill
 
 ```bash
-# Scaffold a new skill
+# Scaffold a new skill from scratch
 spm create my-skill
 
-# Edit SKILL.md with your instructions
-# Add any auxiliary scripts or templates
+# Or convert an existing prompt file
+spm convert my-prompt.md --author myname
 
-# Publish to the registry
+# Or import from GitHub (auto-converts Vercel Skills)
+spm convert owner/repo/skill-name -o ./
+
+# Edit SKILL.md, then publish
 spm publish
 ```
 
@@ -186,6 +237,7 @@ Some projects bundle AI skills inside npm packages. spm takes a different approa
 - **Feedback loop** — `skill_feedback` lets users rate skills. Confidence scores surface the most effective skills.
 - **Personas** — bundle skills into roles. npm has no concept of this.
 - **Extensible format** — a skill can grow from pure instructions to include scripts, templates, and data without changing how it's installed or loaded.
+- **Compatible, not locked-in** — import skills from Vercel Skills, GitHub, or local prompt files. `spm convert` handles format conversion automatically.
 
 ## Security
 

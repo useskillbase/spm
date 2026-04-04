@@ -68,25 +68,12 @@ export async function fetchSkillFromGitHub(
   source: GitHubSource,
   token?: string,
 ): Promise<ParsedSkill> {
-  const octokit = createOctokit(token);
-  const basePath = source.path ? `${source.path}/` : "";
-  const params: { owner: string; repo: string; ref?: string } = {
-    owner: source.owner,
-    repo: source.repo,
-  };
-  if (source.ref) params.ref = source.ref;
-
-  const response = await octokit.repos.getContent({
-    ...params,
-    path: `${basePath}SKILL.md`,
-  });
-
-  if (!("content" in response.data)) {
+  const files = await downloadSkillFiles(source, token);
+  const skillMd = files.get("SKILL.md");
+  if (!skillMd) {
     throw new Error("SKILL.md not found or is a directory");
   }
-
-  const raw = Buffer.from(response.data.content, "base64").toString("utf-8");
-  return parseSkill(raw);
+  return parseSkill(skillMd);
 }
 
 // Download full skill directory as files map (for install)
