@@ -33,9 +33,13 @@ async function recordViolation(
 
   if (skills.length > 0) {
     const skill = skills[0];
-    await addFeedback(skill.name, skill.version, "violation", "automatic", {
-      comment: `${tool}: ${reason}`,
-    });
+    try {
+      await addFeedback(skill.name, skill.version, "violation", "automatic", {
+        comment: `${tool}: ${reason}`,
+      });
+    } catch {
+      // ignore – recording violation is best-effort
+    }
   }
 }
 

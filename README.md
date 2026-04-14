@@ -200,6 +200,8 @@ Works with any GitHub repo that contains `SKILL.md` files — not limited to Ver
 
 ## Publish your own skill
 
+**From the CLI:**
+
 ```bash
 # Scaffold a new skill from scratch
 spm create my-skill
@@ -213,6 +215,17 @@ spm convert owner/repo/skill-name -o ./
 # Edit SKILL.md, then publish
 spm publish
 ```
+
+**From Skillbase Studio:**
+
+[Skillbase Studio](https://studio.skillbase.space) provides a visual editor for creating, testing, publishing, and installing skills — all in the browser. Studio communicates with your local spm daemon to publish and install directly from the UI.
+
+1. Create or import a skill in Studio
+2. Edit and test with the built-in sandbox
+3. Click **Publish** — Studio sends the compiled SKILL.md to your local spm, which handles registry auth and upload
+4. Click **Install** — installs the published version locally via spm
+
+Studio requires spm to be running locally (`spm status-server start` or click "Connect spm" in the UI). All publishing uses your existing `spm login` credentials.
 
 Skills are free to publish and free to use. The registry is open.
 
@@ -256,7 +269,7 @@ We welcome skills, bug reports, feature requests, and documentation improvements
 ## Links
 
 - [skillbase.space](https://skillbase.space) — spm homepage and registry
-- [Skillbase Workspace](https://workspace.skillbase.space) — managed AI teams in the cloud (Teams as a Service)
+- [Skillbase Studio](https://studio.skillbase.space) — visual editor for creating, testing, and publishing skills
 - [Documentation](https://skillbase.space/docs/getting-started)
 - [npm](https://www.npmjs.com/package/@skillbase/spm)
 

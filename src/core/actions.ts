@@ -1,11 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readConfig } from "./config.js";
-import { getClientForSkill } from "./registry-client.js";
+import { getClientForSkill, RegistryClient } from "./registry-client.js";
 import { unpackSkill, computeIntegrity } from "./storage/packager.js";
 import { writeIndex } from "./indexer.js";
 import { writeLock } from "./lock.js";
 import { getGlobalSkillsDir, getInstalledDir } from "./paths.js";
+import { parseSkill } from "./skill-parser.js";
+import { parseSoul } from "./persona-parser.js";
+import { validateSkillFrontmatter } from "../schema/skill-schema.js";
+import { validateSoulFrontmatter } from "../schema/persona-schema.js";
 import type { SkillManifest } from "../types/index.js";
 
 export type StepCallback = (step: string, label: string) => void;
@@ -101,4 +105,89 @@ export async function removeSkill(
 
   await writeIndex(skillsDir);
   await writeLock(skillsDir);
+}
+
+export interface PublishOptions {
+  content: string;
+  filename?: string;
+  visibility?: "public" | "private";
+}
+
+export async function publishSkill(
+  options: PublishOptions,
+  onStep?: StepCallback,
+): Promise<{ name: string; version: string }> {
+  onStep?.("parsing", "Parsing content...");
+
+  const { content, filename } = options;
+  const isPersona = filename === "SOUL.md" || (!filename && content.includes("skillbase:"));
+
+  let manifest: SkillManifest;
+
+  if (isPersona) {
+    const parsed = parseSoul(content);
+    const validation = validateSoulFrontmatter(parsed.frontmatter);
+    if (!validation.valid) {
+      throw new Error(`Invalid SOUL.md:\n${validation.errors.map((e: string) => `  - ${e}`).join("\n")}`);
+    }
+    const fm = parsed.frontmatter;
+    const trigger = fm.skillbase?.trigger;
+    manifest = {
+      schema_version: fm.skillbase?.schema_version ?? 3,
+      name: fm.name,
+      version: fm.version,
+      language: "en",
+      description: fm.description,
+      trigger: trigger ? { description: trigger.description, tags: trigger.tags ?? [], priority: trigger.priority ?? 50 } : undefined,
+      dependencies: {},
+      entry: "SOUL.md",
+      author: fm.author,
+      license: fm.license,
+    } as SkillManifest;
+  } else {
+    const parsed = parseSkill(content);
+    const validation = validateSkillFrontmatter(parsed.frontmatter);
+    if (!validation.valid) {
+      throw new Error(`Invalid SKILL.md:\n${validation.errors.map((e: string) => `  - ${e}`).join("\n")}`);
+    }
+    const fm = parsed.frontmatter;
+    manifest = {
+      schema_version: fm.schema_version,
+      name: fm.name,
+      version: fm.version,
+      language: fm.language,
+      description: fm.description,
+      trigger: fm.trigger,
+      dependencies: fm.dependencies ?? {},
+      compatibility: fm.compatibility,
+      entry: "SKILL.md",
+      security: fm.security,
+      works_with: fm.works_with,
+      author: fm.author,
+      license: fm.license,
+      repository: fm.repository,
+      docs: fm.docs,
+    };
+  }
+
+  onStep?.("validating", `Validating ${manifest.name}@${manifest.version}...`);
+
+  const config = await readConfig();
+  const registryName = config.scopes["*"];
+  if (!registryName) throw new Error("No default registry configured. Use 'spm login' first.");
+  const reg = config.registries.find((r) => r.name === registryName);
+  if (!reg) throw new Error(`Registry "${registryName}" not found in config.`);
+  if (!reg.token) throw new Error(`No token for registry "${registryName}". Use 'spm login' first.`);
+
+  const client = new RegistryClient(reg.url, reg.token);
+
+  onStep?.("publishing", `Publishing ${manifest.name}@${manifest.version}...`);
+
+  const result = await client.publish({
+    manifest,
+    content,
+    visibility: options.visibility,
+  });
+
+  return { name: result.name, version: result.version };
 }

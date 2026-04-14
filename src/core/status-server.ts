@@ -5,7 +5,7 @@ import path from "node:path";
 import { getGlobalSkillsDir, getStatusPortPath, getStatusPidPath } from "./paths.js";
 import { listConnections } from "./connections.js";
 import { getInstalledMap } from "./indexer.js";
-import { installSkill, removeSkill } from "./actions.js";
+import { installSkill, removeSkill, publishSkill } from "./actions.js";
 import type { InstalledMap } from "./indexer.js";
 import { createRequire } from "node:module";
 
@@ -19,16 +19,18 @@ const NONCE_MAX = 100;
 const TASK_TTL_MS = 300_000; // 5 minutes
 const MAX_CONCURRENT_TASKS = 3;
 const PACKAGE_NAME_RE = /^@[a-z0-9-]+\/[a-z0-9-]+$/;
-const VALID_ACTIONS = new Set(["install", "update", "remove"]);
+const VALID_ACTIONS = new Set(["install", "update", "remove", "publish"]);
 
 const CORS_ALLOWLIST = new Set([
   "https://skillbase.space",
-  "https://personas.skillbase.space",
+  "https://studio.skillbase.space",
   // Local dev — safe: only code on the same machine can send these origins
   "http://localhost:3000",
   "http://localhost:3001",
+  "http://localhost:3002",
   "http://127.0.0.1:3000",
   "http://127.0.0.1:3001",
+  "http://127.0.0.1:3002",
 ]);
 
 // In-memory nonce store for challenge-response protocol verification
@@ -40,6 +42,8 @@ export interface ActionTask {
   action: string;
   package: string;
   target: string;
+  content?: string;
+  filename?: string;
   status: "pending" | "in_progress" | "success" | "error";
   step: string | null;
   step_label: string | null;
@@ -145,6 +149,12 @@ async function executeTask(task: ActionTask): Promise<void> {
       await installSkill(task.package, undefined, onStep);
     } else if (task.action === "remove") {
       await removeSkill(task.package, onStep);
+    } else if (task.action === "publish") {
+      const result = await publishSkill({
+        content: task.content!,
+        filename: task.filename,
+      }, onStep);
+      task.package = `@${result.name}`;
     }
     task.status = "success";
   } catch (err) {
@@ -195,7 +205,7 @@ export function createStatusServer(): http.Server {
       }
       try {
         const raw = await readBody(req);
-        let payload: { action?: string; package?: string; version?: string; target?: string };
+        let payload: { action?: string; package?: string; version?: string; target?: string; content?: string; filename?: string };
         try {
           payload = JSON.parse(raw) as typeof payload;
         } catch {
@@ -204,13 +214,20 @@ export function createStatusServer(): http.Server {
         }
 
         if (!payload.action || !VALID_ACTIONS.has(payload.action)) {
-          jsonResponse(res, 400, { error: "Invalid action. Must be install, update, or remove." });
+          jsonResponse(res, 400, { error: "Invalid action. Must be install, update, remove, or publish." });
           return;
         }
 
-        if (!payload.package || !PACKAGE_NAME_RE.test(payload.package)) {
-          jsonResponse(res, 400, { error: "Invalid package name. Must match @author/name." });
-          return;
+        if (payload.action === "publish") {
+          if (!payload.content) {
+            jsonResponse(res, 400, { error: "Missing content for publish action." });
+            return;
+          }
+        } else {
+          if (!payload.package || !PACKAGE_NAME_RE.test(payload.package)) {
+            jsonResponse(res, 400, { error: "Invalid package name. Must match @author/name." });
+            return;
+          }
         }
 
         pruneExpiredTasks();
@@ -224,8 +241,10 @@ export function createStatusServer(): http.Server {
         const task: ActionTask = {
           id,
           action: payload.action,
-          package: payload.package,
+          package: payload.package ?? "",
           target: payload.target ?? "local",
+          content: payload.content,
+          filename: payload.filename,
           status: "pending",
           step: null,
           step_label: null,
