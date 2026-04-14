@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-04-14
+
+## [0.7.1] - 2026-04-14
+
+### Added
+
+- **`publish` action in status server** — the local daemon now supports `POST /action` with `{ action: "publish", content: "...", filename: "SKILL.md" }` for publishing skills directly from Skillbase Studio or other web UIs without CLI
+  - Parses and validates SKILL.md/SOUL.md content server-side
+  - Publishes via the configured registry with step-by-step progress (parsing → validating → publishing)
+  - Uses existing `spm login` credentials — no separate auth needed
+
+### Changed
+
+- **CORS allowlist updated** — added `https://studio.skillbase.space` and `localhost:3002` for Studio integration; removed deprecated `https://personas.skillbase.space`
+
 ## [0.7.0] - 2026-04-04
 
 ## [0.6.4] - 2026-03-29
@@ -38,7 +53,7 @@
 - **`SOUL.md` persona format** — YAML frontmatter with `skillbase:` namespace (trigger, skills, constraints, avatar, voice, animation, MCP servers, settings) + free-form markdown body
 - **Inline package management from website** — install, update, and remove skills directly from the sidebar without CLI
   - `GET /status` returns installed packages map (skills + personas with versions) and `has_token` on connections
-  - `POST /action` starts install/update/remove tasks with async execution and step callbacks
+  - `POST /action` starts install/update/remove/publish tasks with async execution and step callbacks
   - `GET /action/:id` polls task progress (status, step label, error)
   - `POST /shutdown` graceful server stop from browser Disconnect button
   - Max 3 concurrent tasks, 5-minute task cleanup
