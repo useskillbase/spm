@@ -136,10 +136,10 @@ describe("createStatusServer", () => {
 
     const res = await request(server, "/status", {
       method: "OPTIONS",
-      headers: { Origin: "https://personas.skillbase.space" },
+      headers: { Origin: "https://studio.skillbase.space" },
     });
     expect(res.status).toBe(204);
-    expect(res.headers["access-control-allow-origin"]).toBe("https://personas.skillbase.space");
+    expect(res.headers["access-control-allow-origin"]).toBe("https://studio.skillbase.space");
   });
 
   it("sets CORS for soul.skillbase.space", async () => {
