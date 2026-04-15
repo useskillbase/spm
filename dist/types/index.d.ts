@@ -247,6 +247,7 @@ export interface RegistryEntry {
     name: string;
     url: string;
     token?: string;
+    author_name?: string;
 }
 export interface SkillsConfig {
     feedback: FeedbackConfig;

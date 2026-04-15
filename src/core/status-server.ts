@@ -5,6 +5,7 @@ import path from "node:path";
 import { getGlobalSkillsDir, getStatusPortPath, getStatusPidPath } from "./paths.js";
 import { listConnections } from "./connections.js";
 import { getInstalledMap } from "./indexer.js";
+import { readConfig } from "./config.js";
 import { installSkill, removeSkill, publishSkill } from "./actions.js";
 import type { InstalledMap } from "./indexer.js";
 import { createRequire } from "node:module";
@@ -60,6 +61,7 @@ export interface StatusServerOptions {
 
 export interface StatusResponse {
   spm_version: string;
+  author_name: string | null;
   connections: Array<{
     name: string;
     type: string;
@@ -176,12 +178,16 @@ export function createStatusServer(): http.Server {
 
     if (req.method === "GET" && req.url === "/status") {
       try {
-        const [connections, installed] = await Promise.all([
+        const [connections, installed, config] = await Promise.all([
           listConnections(),
           getInstalledMap(),
+          readConfig(),
         ]);
+        const defaultRegistry = config.scopes["*"];
+        const reg = defaultRegistry ? config.registries.find((r) => r.name === defaultRegistry) : undefined;
         const response: StatusResponse = {
           spm_version: pkg.version,
+          author_name: reg?.author_name ?? null,
           connections: connections.map((c) => ({
             name: c.name,
             type: c.type,

@@ -37,17 +37,19 @@ function resolveRegistryName(registryUrl) {
     const urlObj = new URL(registryUrl);
     return urlObj.hostname.replace(/\./g, "-");
 }
-async function saveTokenToConfig(registryUrl, token) {
+async function saveTokenToConfig(registryUrl, token, authorName) {
     const config = await readConfig();
     const existingIdx = config.registries.findIndex((r) => r.url === registryUrl);
     if (existingIdx >= 0) {
         config.registries[existingIdx].token = token;
+        if (authorName)
+            config.registries[existingIdx].author_name = authorName;
         const registryName = config.registries[existingIdx].name;
         await writeConfig(config);
         return registryName;
     }
     const registryName = resolveRegistryName(registryUrl);
-    config.registries.push({ name: registryName, url: registryUrl, token });
+    config.registries.push({ name: registryName, url: registryUrl, token, author_name: authorName });
     if (!config.scopes["*"]) {
         config.scopes["*"] = registryName;
     }
@@ -110,7 +112,7 @@ async function loginWithGithub(registryUrl) {
             const poll = await client.pollDeviceAuth(device.session_id);
             if (poll.status === "complete" && poll.author && poll.token) {
                 s.stop(`Authenticated as "${poll.author.name}" (id: ${poll.author.id})`);
-                const registryName = await saveTokenToConfig(registryUrl, poll.token);
+                const registryName = await saveTokenToConfig(registryUrl, poll.token, poll.author.name);
                 log.info(`Token saved to config (registry: ${registryName})`);
                 log.message("You can now publish skills with: spm publish <path>");
                 return;
