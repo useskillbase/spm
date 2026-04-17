@@ -295,6 +295,7 @@ export interface ToolsConfig {
   sync_feature_update: boolean;
   sync_feature_delete: boolean;
   sync_feature_diff: boolean;
+  sync_feature_comments: boolean;
   sync_search: boolean;
 }
 
@@ -521,6 +522,27 @@ export interface SyncFeatureDiff {
     authorSource: string;
     createdAt: string;
   }>;
+}
+
+export interface SyncComment {
+  id: string;
+  targetType: string;
+  targetId: string;
+  parentCommentId: string | null;
+  content: string;
+  isAcceptedAnswer: boolean;
+  authorSource: string;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+  authorId: string;
+  authorUsername: string | null;
+  authorAvatarUrl: string | null;
+}
+
+export interface SyncCommentList {
+  comments: SyncComment[];
+  targets?: Record<string, { type: string; content: string | null }>;
 }
 
 export interface SyncContextOperation {

@@ -117,6 +117,9 @@ export function registerSyncTools(
   if (config.tools.sync_feature_diff) {
     registerSyncFeatureDiff(server, config);
   }
+  if (config.tools.sync_feature_comments) {
+    registerSyncFeatureComments(server, config);
+  }
   if (config.tools.sync_search) {
     registerSyncSearch(server, config);
   }
@@ -616,6 +619,83 @@ function registerSyncFeatureDiff(server: McpServer, config: SkillsConfig): void 
 }
 
 // ---------------------------------------------------------------------------
+// sync_feature_comments
+// ---------------------------------------------------------------------------
+
+function registerSyncFeatureComments(server: McpServer, config: SkillsConfig): void {
+  server.tool(
+    "sync_feature_comments",
+    "Pull human comments attached to a feature. Pull-only: comments are human-to-human by default and NOT auto-loaded with sync_feature_load. Call this tool when the user references a comment ('read my comment', 'see what I wrote on X', 'check the discussion') or when you want to catch up on discussion before making a decision. Accepted answers on open_questions are already promoted to knowledge_items.resolution — you do not need this tool for those. Use `since` (ISO timestamp) to get only new comments; use target_type+target_id to read a specific thread. Set with_targets=true to include previews of what each comment is attached to.",
+    {
+      feature_id: z.string().describe("Feature UUID."),
+      since: z
+        .string()
+        .optional()
+        .describe(
+          "ISO 8601 timestamp — only return comments created after this instant. Use to fetch only new comments since your last check.",
+        ),
+      target_type: z
+        .enum(["knowledge_item", "feature_version", "description_block", "comment"])
+        .optional()
+        .describe(
+          "Narrow to comments on one kind of target. If set, target_id is required.",
+        ),
+      target_id: z
+        .string()
+        .optional()
+        .describe(
+          "Target identifier — UUID for knowledge_item/comment, block_id for description_block.",
+        ),
+      with_targets: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true, returns a `targets` map with type+content preview for each referenced knowledge_item and description_block. Useful so you understand what each comment is attached to.",
+        ),
+      include_archived: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true, includes comments archived because their description block was edited or removed. Default: excluded.",
+        ),
+    },
+    async ({ feature_id, since, target_type, target_id, with_targets, include_archived }) => {
+      const resolved = resolveClient(config);
+      if (!resolved) return error("No Sync connection configured.");
+
+      if (target_type && !target_id) {
+        return error("target_id is required when target_type is specified.");
+      }
+
+      try {
+        const result = await resolved.client.getFeatureComments(feature_id, {
+          since,
+          targetType: target_type,
+          targetId: target_id,
+          withTargets: with_targets,
+          includeArchived: include_archived,
+        });
+
+        if (result.comments.length === 0) {
+          return text({
+            message: since
+              ? "No new comments since the given timestamp."
+              : "No comments on this feature.",
+            comments: [],
+          });
+        }
+
+        return text(result);
+      } catch (err) {
+        return error(
+          `Failed to load comments: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // sync_project_list
 // ---------------------------------------------------------------------------
 
@@ -997,19 +1077,33 @@ CREATING & MANAGING FEATURES:
 - Links: attach relevant URLs (PRs, issues, docs, designs) to features via sync_feature_edit with links array. Format: [{url, title}].
 - Use sync_feature_delete only with user confirmation — it's irreversible.
 
-SAVING KNOWLEDGE:
-- This is the primary value of Sync — the next person (or agent) working on this feature gets your context without re-discovering it.
-- Save IMMEDIATELY when you discover something worth preserving — don't batch or defer. Each sync_feature_update call is atomic and versioned.
-- What to save as each type:
-  - fact: Verified, objective statement about the codebase or domain. Things that are true and non-obvious. Example: "gray-matter is CJS-only and incompatible with Turbopack"
-  - decision: Architectural or implementation choice. ALWAYS include reason — without it, the next person may reverse your choice without understanding why. Example: content="Use js-yaml instead of gray-matter", reason="Need pure ESM for Turbopack pipeline"
-  - constraint: External limitation that narrows the solution space. These are the most expensive to lose — someone who doesn't know the constraint will waste time on approaches that can't work. Example: "API response must be under 100KB due to mobile data budget"
-  - artifact: Key file or config that was created/changed, with context on why. Example: content="proto/service.proto", reason="gRPC schema for internal services, auto-generates Go/TS types"
-  - open_question: Unresolved item needing input or investigation. Mark resolved=true when answered. Example: "Backward compat for mobile clients on v2 — need PM input on timeline"
-- Quality bar: save what would cost someone 30+ minutes to rediscover. Don't save trivial things (obvious from code) or ephemeral things (current debug state).
+SAVING KNOWLEDGE (this is the primary value of Sync — be aggressive, not cautious):
+- Save IMMEDIATELY when triggered — do NOT batch, do NOT defer to "end of task", do NOT wait until you're sure. Each sync_feature_update call is atomic and versioned, so there's no downside to saving and refining later. The downside of NOT saving is that the next session loses context — that is the failure mode to avoid.
+- Save triggers — call sync_feature_update when ANY of these happen:
+  1. You answer a "why" / "why not" question — save as decision with reason.
+  2. User corrects your approach or preference ("no, don't do X") — save as decision with reason='user preference: explained X'.
+  3. You discover non-obvious behavior (bug, config quirk, library limitation) — save as fact.
+  4. You hit an external limit (API quota, browser constraint, legal requirement) — save as constraint.
+  5. You create/modify a load-bearing file (schema, migration, config) — save as artifact.
+  6. An unresolved question comes up — save as open_question; mark resolved=true the moment it's answered (the answer goes in the accepted-answer comment or in the resolved knowledge item).
+  7. User says "remember that" / "note that" / "for next time" — save immediately.
+  8. You finish a non-trivial implementation step — sweep: what decisions did I make? what did I discover? save them.
+- What each type is for:
+  - fact: Verified, objective statement. Example: "gray-matter is CJS-only and incompatible with Turbopack"
+  - decision: Architectural or implementation choice. ALWAYS include reason. Example: content="Use js-yaml instead of gray-matter", reason="Need pure ESM for Turbopack pipeline"
+  - constraint: External limit narrowing the solution space. Most expensive type to lose. Example: "API response must be under 100KB due to mobile data budget"
+  - artifact: Key file/config that was created or changed, with context. Example: content="proto/service.proto", reason="gRPC schema, auto-generates Go/TS types"
+  - open_question: Unresolved item. Mark resolved=true when answered.
+- Quality bar: save what would cost someone 30+ minutes to rediscover. Do NOT save trivial things (obvious from code) or ephemeral state (current debug values). But when in doubt, SAVE — refining is cheap, rediscovering is expensive.
 - The project's knowledge_update_mode controls behavior:
-  - "auto": push updates immediately via sync_feature_update.
-  - "confirm": ALWAYS present proposed knowledge to the user first. Show type, content, and reason. Wait for approval, then push.
+  - "auto": push updates immediately via sync_feature_update (no confirmation needed).
+  - "confirm": present proposed knowledge to the user first (type, content, reason). Wait for approval, then push. In confirm mode, still propose aggressively — missing a save is worse than proposing one that gets rejected.
+
+COMMENTS (human-to-human discussion, pull-only — NOT auto-loaded):
+- Comments on features are human discussion threads. They are NOT loaded by sync_feature_load or sync_feature_diff to keep your context clean.
+- Accepted answers on open_questions ARE auto-promoted — they appear in knowledge_items.resolution, so you already see them via knowledge endpoints. Do not pull comments just to find an accepted answer.
+- Call sync_feature_comments ONLY when the user explicitly references a comment or asks you to read discussion. Examples: "check the comment I left on the auth question", "read what the team wrote about this", "look at the review thread". Without such a cue, skip comments — they are not part of your default working context.
+- When calling sync_feature_comments, prefer 'since' to fetch only new comments (pass the ISO timestamp from your last check). Pass with_targets=true so you see what each comment is attached to without a second round-trip.
 
 DOCUMENTING A PROJECT (when asked to analyze/document a codebase):
 1. Read and understand the codebase structure, tech stack, architecture.

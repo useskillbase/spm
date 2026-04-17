@@ -30,6 +30,7 @@ const DEFAULT_CONFIG = {
         sync_feature_update: true,
         sync_feature_delete: true,
         sync_feature_diff: true,
+        sync_feature_comments: true,
         sync_search: true,
     },
     search: {

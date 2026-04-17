@@ -12,6 +12,7 @@ import type {
   SyncProjectListItem,
   SyncJson,
   SkillsConfig,
+  SyncCommentList,
 } from "../types/index.js";
 
 export class SyncClient {
@@ -136,6 +137,26 @@ export class SyncClient {
       operations,
       source: "spm",
     });
+  }
+
+  async getFeatureComments(
+    featureId: string,
+    opts: {
+      since?: string;
+      targetType?: string;
+      targetId?: string;
+      includeArchived?: boolean;
+      withTargets?: boolean;
+    } = {},
+  ): Promise<SyncCommentList> {
+    const qs = new URLSearchParams();
+    if (opts.since) qs.set("since", opts.since);
+    if (opts.targetType) qs.set("target_type", opts.targetType);
+    if (opts.targetId) qs.set("target_id", opts.targetId);
+    if (opts.includeArchived) qs.set("include_archived", "true");
+    if (opts.withTargets) qs.set("with_targets", "true");
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return this.request("GET", `/features/${featureId}/comments${suffix}`);
   }
 
   // -- Feature listing --
