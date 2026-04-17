@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { SkillsConfig, SyncJson } from "../types/index.js";
 import { SyncClient, getSyncClient, getSyncClientForProject } from "../core/sync-client.js";
 import { getSkillIndex } from "../core/registry.js";
+import { writeSyncJson } from "../core/sync-json.js";
+import type { DiscoveredSyncJson } from "../core/sync-json.js";
 
 /**
  * Session state — tracks loaded feature versions for efficient diff checks.
@@ -32,6 +34,9 @@ function error(message: string): {
 /** Module-level syncJson, set by registerSyncTools from .skillbase/sync.json */
 let activeSyncJson: SyncJson | null = null;
 
+/** Discovered child project bindings (when running from parent directory) */
+let discoveredProjects: DiscoveredSyncJson[] = [];
+
 function resolveClient(config: SkillsConfig): {
   client: SyncClient;
   projectId: string | undefined;
@@ -60,9 +65,11 @@ export function registerSyncTools(
   server: McpServer,
   config: SkillsConfig,
   syncJson?: SyncJson | null,
+  childProjects?: DiscoveredSyncJson[],
 ): void {
   // Store syncJson for resolveClient
   activeSyncJson = syncJson ?? null;
+  discoveredProjects = childProjects ?? [];
 
   // Only register if there are sync connections
   const hasSyncConnections = (config.sync?.connections?.length ?? 0) > 0;
@@ -80,11 +87,32 @@ export function registerSyncTools(
   if (config.tools.sync_project_prompt) {
     registerSyncProjectPrompt(server, config);
   }
+  if (config.tools.sync_project_list) {
+    registerSyncProjectList(server, config);
+  }
+  if (config.tools.sync_project_create) {
+    registerSyncProjectCreate(server, config);
+  }
+  if (config.tools.sync_project_update) {
+    registerSyncProjectUpdate(server, config);
+  }
+  if (config.tools.sync_project_bind) {
+    registerSyncProjectBind(server, config);
+  }
   if (config.tools.sync_feature_load) {
     registerSyncFeatureLoad(server, config);
   }
+  if (config.tools.sync_feature_create) {
+    registerSyncFeatureCreate(server, config);
+  }
+  if (config.tools.sync_feature_edit) {
+    registerSyncFeatureEdit(server, config);
+  }
   if (config.tools.sync_feature_update) {
     registerSyncFeatureUpdate(server, config);
+  }
+  if (config.tools.sync_feature_delete) {
+    registerSyncFeatureDelete(server, config);
   }
   if (config.tools.sync_feature_diff) {
     registerSyncFeatureDiff(server, config);
@@ -131,12 +159,25 @@ function registerSyncStatus(server: McpServer, config: SkillsConfig): void {
         }
       }
 
-      return text({
+      const result: Record<string, unknown> = {
         connected: true,
         connections,
         active_project_id: resolved?.projectId ?? null,
         knowledge_update_mode: knowledgeUpdateMode,
-      });
+      };
+
+      // If no active project but child projects discovered, show them
+      if (!resolved?.projectId && discoveredProjects.length > 0) {
+        result.discovered_projects = discoveredProjects.map((d) => ({
+          company: d.syncJson.company,
+          project_id: d.syncJson.project_id,
+          project_slug: d.syncJson.project_slug,
+          directory: d.dir,
+        }));
+        result.hint = "No active project in current directory, but found project bindings in child directories. Use sync_feature_load/sync_feature_create with explicit project_id, or cd into the project directory.";
+      }
+
+      return text(result);
     },
   );
 }
@@ -575,6 +616,289 @@ function registerSyncFeatureDiff(server: McpServer, config: SkillsConfig): void 
 }
 
 // ---------------------------------------------------------------------------
+// sync_project_list
+// ---------------------------------------------------------------------------
+
+function registerSyncProjectList(server: McpServer, config: SkillsConfig): void {
+  server.tool(
+    "sync_project_list",
+    "List all projects in a company. Returns project names, slugs, feature counts, and knowledge update modes. Use this to find a project before binding or switching.",
+    {
+      company: z
+        .string()
+        .optional()
+        .describe("Company slug. Defaults to the active company."),
+    },
+    async ({ company }) => {
+      const sync = config.sync;
+      if (!sync?.connections?.length) return error("No Sync connection configured.");
+
+      const companySlug = company ?? activeSyncJson?.company ?? sync.active_connection ?? sync.connections[0]?.company;
+      if (!companySlug) return error("No company specified or active.");
+
+      const connection = sync.connections.find((c) => c.company === companySlug);
+      if (!connection) return error(`No connection for company "${companySlug}".`);
+
+      const client = new SyncClient(connection.api, connection.key);
+
+      try {
+        const result = await client.listProjects(companySlug);
+        return text(result);
+      } catch (err) {
+        return error(`Failed to list projects: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// sync_project_create
+// ---------------------------------------------------------------------------
+
+function registerSyncProjectCreate(server: McpServer, config: SkillsConfig): void {
+  server.tool(
+    "sync_project_create",
+    "Create a new project in a company. REQUIRES user confirmation before calling. Returns the created project with its ID.",
+    {
+      name: z.string().describe("Project display name."),
+      slug: z.string().describe("URL-friendly slug (lowercase, hyphens, 3-63 chars). Example: my-project"),
+      company: z
+        .string()
+        .optional()
+        .describe("Company slug. Defaults to the active company."),
+    },
+    async ({ name, slug, company }) => {
+      const sync = config.sync;
+      if (!sync?.connections?.length) return error("No Sync connection configured.");
+
+      const companySlug = company ?? activeSyncJson?.company ?? sync.active_connection ?? sync.connections[0]?.company;
+      if (!companySlug) return error("No company specified or active.");
+
+      const connection = sync.connections.find((c) => c.company === companySlug);
+      if (!connection) return error(`No connection for company "${companySlug}".`);
+
+      const client = new SyncClient(connection.api, connection.key);
+
+      try {
+        const result = await client.createProject(companySlug, name, slug);
+        return text(result);
+      } catch (err) {
+        return error(`Failed to create project: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// sync_project_update
+// ---------------------------------------------------------------------------
+
+function registerSyncProjectUpdate(server: McpServer, config: SkillsConfig): void {
+  server.tool(
+    "sync_project_update",
+    "Update project settings: prompt content (CLAUDE.md equivalent), conventions, knowledge update mode, or name. Updating promptContent auto-increments the prompt version.",
+    {
+      project_id: z
+        .string()
+        .optional()
+        .describe("Project UUID. Defaults to active project."),
+      name: z.string().optional().describe("New project display name."),
+      prompt_content: z.string().optional().describe("New project prompt content (CLAUDE.md equivalent). Full replacement — send the complete text."),
+      conventions: z.record(z.string(), z.unknown()).optional().describe("Project conventions object."),
+      knowledge_update_mode: z.enum(["auto", "confirm"]).optional().describe("How agents should handle knowledge updates: auto (push immediately) or confirm (ask user first)."),
+    },
+    async ({ project_id, name, prompt_content, conventions, knowledge_update_mode }) => {
+      const resolved = resolveClient(config);
+      if (!resolved) return error("No Sync connection configured.");
+
+      const pid = project_id ?? resolved.projectId;
+      if (!pid) return error("No active project. Pass project_id explicitly.");
+
+      const updates: Record<string, unknown> = {};
+      if (name !== undefined) updates.name = name;
+      if (prompt_content !== undefined) updates.promptContent = prompt_content;
+      if (conventions !== undefined) updates.conventions = conventions;
+      if (knowledge_update_mode !== undefined) updates.knowledgeUpdateMode = knowledge_update_mode;
+
+      if (Object.keys(updates).length === 0) {
+        return error("No updates provided. Pass at least one field to update.");
+      }
+
+      try {
+        const result = await resolved.client.updateProject(pid, updates as Parameters<typeof resolved.client.updateProject>[1]);
+        return text(result);
+      } catch (err) {
+        return error(`Failed to update project: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// sync_project_bind
+// ---------------------------------------------------------------------------
+
+function registerSyncProjectBind(server: McpServer, config: SkillsConfig): void {
+  server.tool(
+    "sync_project_bind",
+    "Bind the current working directory to a Sync project by creating .skillbase/sync.json. This makes the project automatically active when agents run from this directory. After binding, the project context is available without passing project_id explicitly.",
+    {
+      project_id: z.string().describe("Project UUID to bind."),
+      project_slug: z.string().describe("Project slug (for display in sync.json)."),
+      company: z
+        .string()
+        .optional()
+        .describe("Company slug. Defaults to the active company."),
+    },
+    async ({ project_id, project_slug, company }) => {
+      const sync = config.sync;
+      if (!sync?.connections?.length) return error("No Sync connection configured.");
+
+      const companySlug = company ?? sync.active_connection ?? sync.connections[0]?.company;
+      if (!companySlug) return error("No company specified or active.");
+
+      const connection = sync.connections.find((c) => c.company === companySlug);
+      if (!connection) return error(`No connection for company "${companySlug}".`);
+
+      try {
+        const cwd = process.cwd();
+        const data: SyncJson = {
+          company: companySlug,
+          project_id,
+          project_slug,
+        };
+        await writeSyncJson(cwd, data);
+
+        // Update module-level binding so subsequent calls use this project
+        activeSyncJson = data;
+
+        return text({
+          bound: true,
+          directory: cwd,
+          company: companySlug,
+          project_id,
+          project_slug,
+        });
+      } catch (err) {
+        return error(`Failed to bind project: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// sync_feature_create
+// ---------------------------------------------------------------------------
+
+function registerSyncFeatureCreate(server: McpServer, config: SkillsConfig): void {
+  server.tool(
+    "sync_feature_create",
+    "Create a new feature in the active project. Returns the created feature with its ID and version. Use the ID for subsequent sync_feature_update calls to add knowledge items.",
+    {
+      title: z.string().describe("Feature display title."),
+      slug: z.string().describe("URL-friendly slug (lowercase, hyphens, 3-63 chars). Example: auth-refactor"),
+      description: z.string().optional().describe("Feature description text. Supports markdown."),
+      status: z
+        .enum(["draft", "active", "review", "done", "archived"])
+        .optional()
+        .describe("Initial status. Defaults to draft."),
+      project_id: z
+        .string()
+        .optional()
+        .describe("Project UUID. Defaults to active project."),
+    },
+    async ({ title, slug, description, status, project_id }) => {
+      const resolved = resolveClient(config);
+      if (!resolved) return error("No Sync connection configured.");
+
+      const pid = project_id ?? resolved.projectId;
+      if (!pid) return error("No active project. Pass project_id explicitly.");
+
+      try {
+        const result = await resolved.client.createFeature(pid, {
+          title,
+          slug,
+          description,
+          status,
+        });
+        return text(result);
+      } catch (err) {
+        return error(`Failed to create feature: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// sync_feature_edit
+// ---------------------------------------------------------------------------
+
+function registerSyncFeatureEdit(server: McpServer, config: SkillsConfig): void {
+  server.tool(
+    "sync_feature_edit",
+    "Update feature metadata: title, status, description, or links. This is different from sync_feature_update which manages knowledge items. Use this to change a feature's status (e.g. draft → active → done) or update its description.",
+    {
+      feature_id: z.string().describe("Feature UUID to edit."),
+      title: z.string().optional().describe("New feature title."),
+      status: z
+        .enum(["draft", "active", "review", "done", "archived"])
+        .optional()
+        .describe("New feature status."),
+      description: z.string().optional().describe("New feature description. Full replacement."),
+      links: z.array(z.unknown()).optional().describe("New links array. Full replacement."),
+    },
+    async ({ feature_id, title, status, description, links }) => {
+      const resolved = resolveClient(config);
+      if (!resolved) return error("No Sync connection configured.");
+
+      const updates: Record<string, unknown> = {};
+      if (title !== undefined) updates.title = title;
+      if (status !== undefined) updates.status = status;
+      if (description !== undefined) updates.description = description;
+      if (links !== undefined) updates.links = links;
+
+      if (Object.keys(updates).length === 0) {
+        return error("No updates provided. Pass at least one field to update.");
+      }
+
+      try {
+        const result = await resolved.client.updateFeature(feature_id, updates as Parameters<typeof resolved.client.updateFeature>[1]);
+        return text(result);
+      } catch (err) {
+        return error(`Failed to edit feature: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// sync_feature_delete
+// ---------------------------------------------------------------------------
+
+function registerSyncFeatureDelete(server: McpServer, config: SkillsConfig): void {
+  server.tool(
+    "sync_feature_delete",
+    "Delete a feature and all its knowledge items. This is IRREVERSIBLE. REQUIRES user confirmation before calling.",
+    {
+      feature_id: z.string().describe("Feature UUID to delete."),
+    },
+    async ({ feature_id }) => {
+      const resolved = resolveClient(config);
+      if (!resolved) return error("No Sync connection configured.");
+
+      try {
+        const result = await resolved.client.deleteFeature(feature_id);
+        // Clean up tracked version
+        featureVersions.delete(feature_id);
+        return text(result);
+      } catch (err) {
+        return error(`Failed to delete feature: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // sync_search
 // ---------------------------------------------------------------------------
 
@@ -616,7 +940,11 @@ function registerSyncSearch(server: McpServer, config: SkillsConfig): void {
  * Build the Sync protocol instructions block.
  * Only called when sync connections exist.
  */
-export function buildSyncInstructions(config: SkillsConfig, syncJson?: SyncJson | null): string {
+export function buildSyncInstructions(
+  config: SkillsConfig,
+  syncJson?: SyncJson | null,
+  childProjects?: DiscoveredSyncJson[],
+): string {
   const sync = config.sync;
   if (!sync?.connections?.length) return "";
 
@@ -624,41 +952,81 @@ export function buildSyncInstructions(config: SkillsConfig, syncJson?: SyncJson 
   const active = syncJson?.company ?? sync.active_connection ?? sync.connections[0]?.company;
   const projectId = syncJson?.project_id;
   const projectSlug = syncJson?.project_slug;
-  const projectNote = projectId
-    ? ` Active project: ${projectSlug ?? projectId} (auto-detected from .skillbase/sync.json).`
-    : " No active project set — run spm sync init to bind this directory.";
+
+  let projectNote: string;
+  if (projectId) {
+    projectNote = ` Active project: ${projectSlug ?? projectId} (auto-detected from .skillbase/sync.json).`;
+  } else if (childProjects?.length) {
+    const list = childProjects
+      .map((d) => `  - ${d.syncJson.project_slug} (${d.syncJson.project_id}) in ${d.dir}`)
+      .join("\n");
+    projectNote = ` No active project in current directory, but found ${childProjects.length} project(s) in child directories:\n${list}\nPass project_id explicitly to tools, or use sync_project_bind to bind this directory.`;
+  } else {
+    projectNote = " No active project set — use sync_project_bind to bind this directory, or pass project_id explicitly.";
+  }
+
+  const companies = sync.connections.map((c) => c.company).join(", ");
 
   return `
 
-SYNC PROTOCOL — Skillbase Sync is connected (company: "${active}").${projectNote} You have access to team knowledge and project context. Follow this protocol:
+SYNC PROTOCOL — Skillbase Sync is connected (company: "${active}", available: [${companies}]).${projectNote}
+
+You have access to team knowledge and project context via Sync. This is your structured memory — it persists across sessions and is shared with teammates and other agents.
+
+SESSION START (do this first):
+1. Call sync_status to confirm connection and identify the active project. If no active project but child projects are discovered, note their project_ids for explicit use.
+2. Call sync_project_prompt to load project-wide context (tech stack, conventions, architecture). This is equivalent to reading CLAUDE.md — do it once per session, reload only if version changed.
+3. If the user's task relates to a specific feature, call sync_feature_load or sync_search immediately to get existing context before starting work.
+4. Call sync_environment to check if all required skills/personas are installed. Suggest installing missing ones.
+
+SETUP & NAVIGATION:
+- Use sync_project_list to see all projects in a company.
+- Use sync_project_bind to bind the current directory to a project (creates .skillbase/sync.json). After binding, all tools default to this project.
+- If no active project: sync_status shows projects discovered in child directories. Use their project_id explicitly, or sync_project_bind to set one as default.
 
 LOADING CONTEXT:
-- When the user mentions a feature, task, or ticket (by name, slug, or ID) — call sync_feature_load IMMEDIATELY before starting work.
-- sync_feature_load returns a lightweight map first. Based on the map, decide which knowledge types to load (decisions and constraints are almost always relevant; facts and artifacts — load on demand).
-- Load project prompt once per session via sync_project_prompt. It contains project-wide conventions and architecture decisions.
-- If you're unsure which feature to load, use sync_search to find it by name.
-- Before starting any new feature work, search for related existing knowledge using sync_search — previous decisions and constraints from other features may apply.
+- When the user mentions a feature, task, or ticket — call sync_feature_load IMMEDIATELY before starting work.
+- sync_feature_load returns a lightweight map first. Then load sections selectively: decisions and constraints are almost always relevant; facts and artifacts — on demand.
+- ALWAYS sync_search before creating a new feature — avoid duplicates. Search by name, keywords, or related concepts.
+- Before starting any new feature work, search for related existing knowledge — previous decisions and constraints from other features may apply.
+
+CREATING & MANAGING FEATURES:
+- Use sync_feature_create to create new features. Always provide a meaningful slug (lowercase, hyphens, 3-63 chars).
+- Feature description = scope and purpose of the feature. What it is, what problem it solves, what's in/out of scope. Keep it as a brief overview (1-3 paragraphs). Specific findings go into knowledge items, not description.
+- Feature lifecycle: draft → active → review → done → archived. Use sync_feature_edit to update status as work progresses.
+- Links: attach relevant URLs (PRs, issues, docs, designs) to features via sync_feature_edit with links array. Format: [{url, title}].
+- Use sync_feature_delete only with user confirmation — it's irreversible.
 
 SAVING KNOWLEDGE:
-- As you work, actively record discoveries as structured knowledge. This is the primary value of Sync — the next person working on this feature gets your context.
+- This is the primary value of Sync — the next person (or agent) working on this feature gets your context without re-discovering it.
 - Save IMMEDIATELY when you discover something worth preserving — don't batch or defer. Each sync_feature_update call is atomic and versioned.
 - What to save as each type:
-  - fact: Verified, objective statement. Example: "gray-matter is CJS-only and incompatible with Turbopack"
-  - decision: Architectural or implementation choice WITH the reason. Always include reason — without it, the next person may reverse your decision. Example: content="Use js-yaml instead of gray-matter", reason="Need pure ESM for Turbopack pipeline"
-  - constraint: External limitation that narrows the solution space. Most expensive to lose. Example: "API response must be under 100KB due to mobile data budget"
-  - artifact: File or config created/changed + summary. Example: content="proto/service.proto", reason="gRPC schema for internal services"
-  - open_question: Unresolved item for handoff. Mark resolved when answered. Example: "Backward compat for mobile clients — need PM input"
-- Do NOT save trivial or obvious things. Save what would cost someone else time to rediscover.
+  - fact: Verified, objective statement about the codebase or domain. Things that are true and non-obvious. Example: "gray-matter is CJS-only and incompatible with Turbopack"
+  - decision: Architectural or implementation choice. ALWAYS include reason — without it, the next person may reverse your choice without understanding why. Example: content="Use js-yaml instead of gray-matter", reason="Need pure ESM for Turbopack pipeline"
+  - constraint: External limitation that narrows the solution space. These are the most expensive to lose — someone who doesn't know the constraint will waste time on approaches that can't work. Example: "API response must be under 100KB due to mobile data budget"
+  - artifact: Key file or config that was created/changed, with context on why. Example: content="proto/service.proto", reason="gRPC schema for internal services, auto-generates Go/TS types"
+  - open_question: Unresolved item needing input or investigation. Mark resolved=true when answered. Example: "Backward compat for mobile clients on v2 — need PM input on timeline"
+- Quality bar: save what would cost someone 30+ minutes to rediscover. Don't save trivial things (obvious from code) or ephemeral things (current debug state).
 - The project's knowledge_update_mode controls behavior:
   - "auto": push updates immediately via sync_feature_update.
-  - "confirm": ALWAYS present proposed knowledge to the user first. Wait for approval, then call sync_feature_update.
+  - "confirm": ALWAYS present proposed knowledge to the user first. Show type, content, and reason. Wait for approval, then push.
+
+DOCUMENTING A PROJECT (when asked to analyze/document a codebase):
+1. Read and understand the codebase structure, tech stack, architecture.
+2. Update the project prompt via sync_project_update with prompt_content. Include: project purpose, tech stack, key architectural patterns, development conventions, deployment setup. This is what every agent reads on session start.
+3. Create features for each major area/component/initiative. Use descriptive slugs and clear descriptions.
+4. For each feature, add knowledge items: facts about the implementation, decisions that were made (with reasons from git history/code comments), constraints discovered, key artifacts, and open questions.
+5. Set feature status: "done" for documented areas, "active" for work in progress, "draft" for stubs to fill later.
+
+PROJECT MANAGEMENT:
+- Use sync_project_create to create new projects (requires user confirmation).
+- sync_project_update fields:
+  - prompt_content: Project-wide context for all agents. Structure it as: purpose, tech stack, architecture overview, conventions, deployment. This is the equivalent of CLAUDE.md but shared and versioned.
+  - conventions: Structured key-value object for machine-readable conventions (naming, formatting, patterns).
+  - knowledge_update_mode: "auto" (agents push immediately) or "confirm" (agents ask user first).
 
 CHECKING FOR UPDATES:
-- During long sessions, call sync_feature_diff to check if teammates added context.
-- The feature map includes a version number — if changed, fetch diff, don't reload everything.
-- When diff shows new constraints or decisions from others, acknowledge them and adjust your approach.
-
-ENVIRONMENT:
-- Use sync_status to verify connection and active project.
-- Use sync_environment to compare project manifest against locally installed skills/personas. Suggest installing missing items.`;
+- During long sessions, call sync_feature_diff to check if teammates or other agents added context.
+- The feature map includes a version number — if it changed since your last load, fetch diff, don't reload everything.
+- When diff shows new constraints or decisions from others, acknowledge them and adjust your approach.`;
 }

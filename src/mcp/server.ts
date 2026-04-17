@@ -22,7 +22,8 @@ import type { SkillsConfig, LoadedSkillSession } from "../types/index.js";
 import { registerProxyTools } from "./proxy-tools.js";
 import { buildPolicyBlock } from "./permissions.js";
 import { registerSyncTools, buildSyncInstructions } from "./sync-tools.js";
-import { findSyncJson } from "../core/sync-json.js";
+import { findSyncJson, discoverChildSyncJsons } from "../core/sync-json.js";
+import type { DiscoveredSyncJson } from "../core/sync-json.js";
 import type { SyncJson } from "../types/index.js";
 
 function buildInstructions(
@@ -94,12 +95,19 @@ export async function createServer(): Promise<McpServer> {
       buildCharacterInstructions(activePersona);
   }
 
-  // Detect .skillbase/sync.json from cwd for automatic project binding
-  const syncJsonResult = await findSyncJson(process.cwd());
+  // Detect .skillbase/sync.json from cwd (walk up), or scan child dirs
+  const cwd = process.cwd();
+  const syncJsonResult = await findSyncJson(cwd);
   const syncJson: SyncJson | null = syncJsonResult?.syncJson ?? null;
 
+  // If no direct binding found, scan immediate child directories
+  let childProjects: DiscoveredSyncJson[] = [];
+  if (!syncJson) {
+    childProjects = await discoverChildSyncJsons(cwd);
+  }
+
   // Build sync instructions (empty string if no connections)
-  const syncInstructions = buildSyncInstructions(config, syncJson);
+  const syncInstructions = buildSyncInstructions(config, syncJson, childProjects);
 
   const server = new McpServer(
     {
@@ -116,7 +124,7 @@ export async function createServer(): Promise<McpServer> {
 
   const loadedSkills: LoadedSkillSession[] = [];
 
-  registerTools(server, config, loadedSkills, syncJson);
+  registerTools(server, config, loadedSkills, syncJson, childProjects);
 
   return server;
 }
@@ -126,6 +134,7 @@ function registerTools(
   config: SkillsConfig,
   loadedSkills: LoadedSkillSession[],
   syncJson: SyncJson | null,
+  childProjects: DiscoveredSyncJson[],
 ): void {
   if (config.tools.skill_list) {
     registerSkillList(server);
@@ -158,7 +167,8 @@ function registerTools(
     registerProxyTools(server, loadedSkills);
   }
 
-  registerSyncTools(server, config, syncJson);
+  registerSyncTools(server, config, syncJson, childProjects);
+
 }
 
 function registerSkillList(server: McpServer): void {

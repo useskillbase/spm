@@ -285,8 +285,15 @@ export interface ToolsConfig {
   sync_environment: boolean;
   sync_install: boolean;
   sync_project_prompt: boolean;
+  sync_project_list: boolean;
+  sync_project_create: boolean;
+  sync_project_update: boolean;
+  sync_project_bind: boolean;
   sync_feature_load: boolean;
+  sync_feature_create: boolean;
+  sync_feature_edit: boolean;
   sync_feature_update: boolean;
+  sync_feature_delete: boolean;
   sync_feature_diff: boolean;
   sync_search: boolean;
 }

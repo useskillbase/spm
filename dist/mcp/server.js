@@ -12,7 +12,7 @@ import { listPersonas, readPersona, getActivePersona, buildCharacterInstructions
 import { registerProxyTools } from "./proxy-tools.js";
 import { buildPolicyBlock } from "./permissions.js";
 import { registerSyncTools, buildSyncInstructions } from "./sync-tools.js";
-import { findSyncJson } from "../core/sync-json.js";
+import { findSyncJson, discoverChildSyncJsons } from "../core/sync-json.js";
 function buildInstructions(skillIndex, personaIndex, activePersonaInstructions, syncInstructions) {
     const lines = [
         "Skillbase — AI skill manager.",
@@ -68,11 +68,17 @@ export async function createServer() {
             "\n\n" +
                 buildCharacterInstructions(activePersona);
     }
-    // Detect .skillbase/sync.json from cwd for automatic project binding
-    const syncJsonResult = await findSyncJson(process.cwd());
+    // Detect .skillbase/sync.json from cwd (walk up), or scan child dirs
+    const cwd = process.cwd();
+    const syncJsonResult = await findSyncJson(cwd);
     const syncJson = syncJsonResult?.syncJson ?? null;
+    // If no direct binding found, scan immediate child directories
+    let childProjects = [];
+    if (!syncJson) {
+        childProjects = await discoverChildSyncJsons(cwd);
+    }
     // Build sync instructions (empty string if no connections)
-    const syncInstructions = buildSyncInstructions(config, syncJson);
+    const syncInstructions = buildSyncInstructions(config, syncJson, childProjects);
     const server = new McpServer({
         name: "skillbase",
         version: pkg.version,
@@ -83,10 +89,10 @@ export async function createServer() {
         instructions: buildInstructions(skillIndex, personaIndex, activePersonaInstructions, syncInstructions),
     });
     const loadedSkills = [];
-    registerTools(server, config, loadedSkills, syncJson);
+    registerTools(server, config, loadedSkills, syncJson, childProjects);
     return server;
 }
-function registerTools(server, config, loadedSkills, syncJson) {
+function registerTools(server, config, loadedSkills, syncJson, childProjects) {
     if (config.tools.skill_list) {
         registerSkillList(server);
     }
@@ -117,7 +123,7 @@ function registerTools(server, config, loadedSkills, syncJson) {
     if (config.tools.skill_exec) {
         registerProxyTools(server, loadedSkills);
     }
-    registerSyncTools(server, config, syncJson);
+    registerSyncTools(server, config, syncJson, childProjects);
 }
 function registerSkillList(server) {
     server.tool("skill_list", "Returns a compact list of all installed skills with their trigger descriptions, tags, and token estimates. Use this to discover which skills are available before loading one.", {}, async () => {

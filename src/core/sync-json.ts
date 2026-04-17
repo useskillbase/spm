@@ -3,6 +3,11 @@ import path from "node:path";
 import type { SyncJson } from "../types/index.js";
 import { getSyncJsonPath, getSkillbaseDir } from "./paths.js";
 
+export interface DiscoveredSyncJson {
+  syncJson: SyncJson;
+  dir: string;
+}
+
 /**
  * Read `.skillbase/sync.json` from the given directory.
  * Returns null if file doesn't exist or is invalid.
@@ -45,7 +50,7 @@ export async function writeSyncJson(
  */
 export async function findSyncJson(
   startDir: string,
-): Promise<{ syncJson: SyncJson; dir: string } | null> {
+): Promise<DiscoveredSyncJson | null> {
   let dir = path.resolve(startDir);
 
   while (true) {
@@ -58,4 +63,39 @@ export async function findSyncJson(
   }
 
   return null;
+}
+
+/**
+ * Scan immediate child directories for `.skillbase/sync.json`.
+ * Used when cwd is a parent directory (e.g. ~/Projects/skillbase/)
+ * that contains multiple project subdirectories.
+ */
+export async function discoverChildSyncJsons(
+  parentDir: string,
+): Promise<DiscoveredSyncJson[]> {
+  const resolved = path.resolve(parentDir);
+  const results: DiscoveredSyncJson[] = [];
+
+  let names: string[];
+  try {
+    names = await fs.readdir(resolved);
+  } catch {
+    return results;
+  }
+
+  for (const name of names) {
+    const childDir = path.join(resolved, name);
+    try {
+      const stat = await fs.stat(childDir);
+      if (!stat.isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    const syncJson = await readSyncJson(childDir);
+    if (syncJson) {
+      results.push({ syncJson, dir: childDir });
+    }
+  }
+
+  return results;
 }

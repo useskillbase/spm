@@ -87,7 +87,13 @@ export class SyncClient {
 
   async updateProject(
     projectId: string,
-    updates: { links?: unknown[] },
+    updates: {
+      name?: string;
+      promptContent?: string;
+      conventions?: Record<string, unknown>;
+      knowledgeUpdateMode?: "auto" | "confirm";
+      links?: unknown[];
+    },
   ): Promise<unknown> {
     return this.request("PATCH", `/projects/${projectId}`, updates);
   }
@@ -140,6 +146,35 @@ export class SyncClient {
   ): Promise<{ features: SyncFeatureListItem[] }> {
     const query = status ? `?status=${status}` : "";
     return this.request("GET", `/projects/${projectId}/features${query}`);
+  }
+
+  async createFeature(
+    projectId: string,
+    data: {
+      title: string;
+      slug: string;
+      description?: string;
+      status?: string;
+      links?: unknown[];
+    },
+  ): Promise<{ feature: SyncFeatureListItem }> {
+    return this.request("POST", `/projects/${projectId}/features`, data);
+  }
+
+  async updateFeature(
+    featureId: string,
+    updates: {
+      title?: string;
+      status?: string;
+      description?: string;
+      links?: unknown[];
+    },
+  ): Promise<{ feature: SyncFeatureListItem }> {
+    return this.request("PATCH", `/features/${featureId}`, updates);
+  }
+
+  async deleteFeature(featureId: string): Promise<{ deleted: boolean }> {
+    return this.request("DELETE", `/features/${featureId}`);
   }
 
   // -- Search --
