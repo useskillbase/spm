@@ -1,0 +1,207 @@
+import type {
+  SyncManifest,
+  SyncProjectPrompt,
+  SyncFeatureMap,
+  SyncKnowledgeItem,
+  SyncFeatureDiff,
+  SyncContextOperation,
+  SyncPushResult,
+  SyncFeatureListItem,
+  SyncSearchResult,
+  SyncConnection,
+  SyncProjectListItem,
+  SyncJson,
+  SkillsConfig,
+} from "../types/index.js";
+
+export class SyncClient {
+  private readonly api: string;
+  private readonly key: string;
+
+  constructor(api: string, key: string) {
+    this.api = api.replace(/\/$/, "");
+    this.key = key;
+  }
+
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
+    const url = `${this.api}/api/v1${path}`;
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.key}`,
+      "Content-Type": "application/json",
+    };
+
+    const res = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      let reason = "";
+      try {
+        const parsed = JSON.parse(text) as { error?: string; reason?: string };
+        reason = parsed.reason ?? parsed.error ?? "";
+      } catch {
+        reason = text.slice(0, 200);
+      }
+      throw new Error(`Sync API ${res.status}: ${reason || res.statusText}`);
+    }
+
+    return (await res.json()) as T;
+  }
+
+  // -- Projects --
+
+  async getManifest(projectId: string): Promise<SyncManifest> {
+    return this.request("GET", `/projects/${projectId}/manifest`);
+  }
+
+  async getProjectPrompt(projectId: string): Promise<SyncProjectPrompt> {
+    return this.request("GET", `/projects/${projectId}/prompt`);
+  }
+
+  // -- Companies & Projects --
+
+  async listProjects(
+    companySlug: string,
+  ): Promise<{ projects: SyncProjectListItem[] }> {
+    return this.request("GET", `/companies/${companySlug}/projects`);
+  }
+
+  async createProject(
+    companySlug: string,
+    name: string,
+    slug: string,
+  ): Promise<{ project: SyncProjectListItem }> {
+    return this.request("POST", `/companies/${companySlug}/projects`, {
+      name,
+      slug,
+    });
+  }
+
+  async updateProject(
+    projectId: string,
+    updates: { links?: unknown[] },
+  ): Promise<unknown> {
+    return this.request("PATCH", `/projects/${projectId}`, updates);
+  }
+
+  // -- Features --
+
+  async getFeatureMap(featureId: string): Promise<SyncFeatureMap> {
+    return this.request("GET", `/features/${featureId}/map`);
+  }
+
+  async getFeatureKnowledge(
+    featureId: string,
+    types?: string[],
+  ): Promise<{ items: SyncKnowledgeItem[] }> {
+    const query = types?.length ? `?type=${types.join(",")}` : "";
+    return this.request("GET", `/features/${featureId}/knowledge${query}`);
+  }
+
+  async getFeatureDescription(
+    featureId: string,
+  ): Promise<{ description: string | null }> {
+    return this.request("GET", `/features/${featureId}/description`);
+  }
+
+  async getFeatureDiff(
+    featureId: string,
+    sinceVersion: number,
+  ): Promise<SyncFeatureDiff> {
+    return this.request(
+      "GET",
+      `/features/${featureId}/diff?since_version=${sinceVersion}`,
+    );
+  }
+
+  async pushContext(
+    featureId: string,
+    operations: SyncContextOperation[],
+  ): Promise<SyncPushResult> {
+    return this.request("PATCH", `/features/${featureId}/context`, {
+      operations,
+      source: "spm",
+    });
+  }
+
+  // -- Feature listing --
+
+  async listFeatures(
+    projectId: string,
+    status?: string,
+  ): Promise<{ features: SyncFeatureListItem[] }> {
+    const query = status ? `?status=${status}` : "";
+    return this.request("GET", `/projects/${projectId}/features${query}`);
+  }
+
+  // -- Search --
+
+  async searchProject(
+    projectId: string,
+    query: string,
+    limit?: number,
+  ): Promise<SyncSearchResult> {
+    return this.request("POST", `/projects/${projectId}/search`, {
+      query,
+      limit,
+    });
+  }
+}
+
+/**
+ * Resolve the active sync connection and return a client, or null if not configured.
+ */
+export function getSyncClient(config: SkillsConfig): {
+  client: SyncClient;
+  connection: SyncConnection;
+} | null {
+  const sync = config.sync;
+  if (!sync?.connections?.length) return null;
+
+  const activeSlug = sync.active_connection;
+  const connection = activeSlug
+    ? sync.connections.find((c) => c.company === activeSlug)
+    : sync.connections[0];
+
+  if (!connection) return null;
+
+  return {
+    client: new SyncClient(connection.api, connection.key),
+    connection,
+  };
+}
+
+/**
+ * Resolve a sync client for a specific project binding (from .skillbase/sync.json).
+ * Picks the connection matching the company slug in syncJson.
+ */
+export function getSyncClientForProject(
+  config: SkillsConfig,
+  syncJson: SyncJson,
+): {
+  client: SyncClient;
+  connection: SyncConnection;
+  projectId: string;
+} | null {
+  const sync = config.sync;
+  if (!sync?.connections?.length) return null;
+
+  const connection = sync.connections.find(
+    (c) => c.company === syncJson.company,
+  );
+  if (!connection) return null;
+
+  return {
+    client: new SyncClient(connection.api, connection.key),
+    connection,
+    projectId: syncJson.project_id,
+  };
+}

@@ -18,6 +18,14 @@ const DEFAULT_CONFIG: SkillsConfig = {
     persona_list: true,
     persona_install: true,
     skill_exec: true,
+    sync_status: true,
+    sync_environment: true,
+    sync_install: true,
+    sync_project_prompt: true,
+    sync_feature_load: true,
+    sync_feature_update: true,
+    sync_feature_diff: true,
+    sync_search: true,
   },
   search: {
     remote_enabled: true,
@@ -72,6 +80,7 @@ function mergeWithDefaults(partial: Partial<SkillsConfig>): SkillsConfig {
     scopes: partial.scopes ?? defaults.scopes,
     active_persona: partial.active_persona ?? defaults.active_persona,
     github: partial.github,
+    sync: partial.sync,
   };
 }
 

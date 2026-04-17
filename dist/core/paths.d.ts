@@ -11,4 +11,6 @@ export declare function getSkillMdPath(skillsDir: string, author: string, skillN
 export declare function getConnectionsPath(skillsDir?: string): string;
 export declare function getStatusPortPath(skillsDir?: string): string;
 export declare function getStatusPidPath(skillsDir?: string): string;
+export declare function getSkillbaseDir(cwd: string): string;
+export declare function getSyncJsonPath(cwd: string): string;
 //# sourceMappingURL=paths.d.ts.map

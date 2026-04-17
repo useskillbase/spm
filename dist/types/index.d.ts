@@ -238,6 +238,14 @@ export interface ToolsConfig {
     persona_list: boolean;
     persona_install: boolean;
     skill_exec: boolean;
+    sync_status: boolean;
+    sync_environment: boolean;
+    sync_install: boolean;
+    sync_project_prompt: boolean;
+    sync_feature_load: boolean;
+    sync_feature_update: boolean;
+    sync_feature_diff: boolean;
+    sync_search: boolean;
 }
 export interface SearchConfig {
     remote_enabled: boolean;
@@ -259,6 +267,7 @@ export interface SkillsConfig {
     github?: {
         token?: string;
     };
+    sync?: SyncConfig;
 }
 export interface LockSkillEntry {
     version: string;
@@ -347,5 +356,137 @@ export interface LoadedSkillSession {
     tokens: number;
     permissions: string[];
     file_scope?: string[];
+}
+export interface SyncJson {
+    company: string;
+    project_id: string;
+    project_slug: string;
+}
+export interface SyncConnection {
+    company: string;
+    api: string;
+    key: string;
+    project_id?: string;
+    connected_at: string;
+}
+export interface SyncConfig {
+    connections: SyncConnection[];
+    active_connection?: string;
+}
+export interface SyncProjectListItem {
+    id: string;
+    slug: string;
+    name: string;
+    knowledgeUpdateMode: "auto" | "confirm";
+    createdAt: string;
+    updatedAt: string;
+    featureCount: number;
+}
+export interface SyncManifest {
+    project: {
+        id: string;
+        slug: string;
+        name: string;
+        knowledgeUpdateMode: "auto" | "confirm";
+    };
+    skills: Array<{
+        skillName: string;
+        skillVersion: string;
+    }>;
+    personas: Array<{
+        personaName: string;
+        personaVersion: string;
+    }>;
+}
+export interface SyncProjectPrompt {
+    promptContent: string | null;
+    promptVersion: number;
+    conventions: Record<string, unknown>;
+}
+export interface SyncKnowledgeSummary {
+    [type: string]: {
+        count: number;
+        latest?: string;
+        unresolved?: number;
+    };
+}
+export interface SyncFeatureMap {
+    feature: {
+        id: string;
+        slug: string;
+        title: string;
+        status: string;
+        version: number;
+        updatedAt: string;
+        descriptionPreview: string | null;
+        links: unknown[];
+    };
+    knowledgeSummary: SyncKnowledgeSummary;
+    projectPromptVersion: number;
+}
+export interface SyncKnowledgeItem {
+    id: string;
+    type: string;
+    content: string;
+    reason: string | null;
+    metadata: Record<string, unknown>;
+    resolved: boolean;
+    featureVersion: number;
+    createdAt: string;
+    updatedAt: string;
+}
+export interface SyncFeatureDiff {
+    fromVersion: number;
+    toVersion: number;
+    changes: Array<{
+        version: number;
+        changes: unknown;
+        authorUsername: string;
+        authorSource: string;
+        createdAt: string;
+    }>;
+}
+export interface SyncContextOperation {
+    action: "add" | "update" | "remove" | "update_description";
+    type?: string;
+    content?: string;
+    reason?: string;
+    id?: string;
+    resolved?: boolean;
+    metadata?: Record<string, unknown>;
+    description?: string;
+}
+export interface SyncPushResult {
+    version: number;
+    appliedOperations: number;
+}
+export interface SyncFeatureListItem {
+    id: string;
+    slug: string;
+    title: string;
+    status: string;
+    version: number;
+    updatedAt: string;
+    descriptionPreview: string | null;
+}
+export interface SyncSearchResult {
+    features: Array<{
+        id: string;
+        slug: string;
+        title: string;
+        status: string;
+        description_preview: string | null;
+        rank: number;
+    }>;
+    knowledgeItems: Array<{
+        id: string;
+        type: string;
+        content: string;
+        reason: string | null;
+        feature_id: string;
+        feature_slug: string;
+        feature_title: string;
+        rank: number;
+    }>;
 }
 //# sourceMappingURL=index.d.ts.map

@@ -136,6 +136,25 @@ Available personas:
 | `prompt-engineer` | Prompt engineer | SKILL.md authoring, prompt best practices |
 | `prompt-manager` | Prompt manager | skill demand research, quality review |
 
+## Team sync
+
+[Skillbase Sync](https://sync.skillbase.space) adds team-level configuration and knowledge sharing on top of spm. Define a standard skill set for your project — everyone installs with one command.
+
+```bash
+# Link your repo to a Sync project
+spm sync init
+
+# Install everything the project requires
+spm sync
+
+# Check what's missing without installing
+spm sync --status
+```
+
+When Sync is connected, your AI agent also gets access to shared team knowledge — decisions, constraints, and context captured by teammates. No more starting from scratch when someone else picks up a task.
+
+Learn more: [Sync documentation](https://skillbase.space/docs/sync)
+
 ## Registry
 
 The registry currently hosts 30+ skills across several domains:
@@ -269,6 +288,7 @@ We welcome skills, bug reports, feature requests, and documentation improvements
 ## Links
 
 - [skillbase.space](https://skillbase.space) — spm homepage and registry
+- [Skillbase Sync](https://sync.skillbase.space) — team knowledge sharing and project configuration
 - [Skillbase Studio](https://studio.skillbase.space) — visual editor for creating, testing, and publishing skills
 - [Documentation](https://skillbase.space/docs/getting-started)
 - [npm](https://www.npmjs.com/package/@skillbase/spm)

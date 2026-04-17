@@ -10,6 +10,8 @@ const CONNECTIONS_FILE = "connections.json";
 const STATUS_PORT_FILE = "status.port";
 const STATUS_PID_FILE = "status.pid";
 const WORKSPACE_MANIFEST = "skillbase.json";
+const SKILLBASE_DIR = ".skillbase";
+const SYNC_JSON = "sync.json";
 
 
 export function getGlobalSkillsDir(): string {
@@ -66,4 +68,12 @@ export function getStatusPortPath(skillsDir?: string): string {
 export function getStatusPidPath(skillsDir?: string): string {
   const dir = skillsDir ?? path.join(os.homedir(), SKILLS_DIR_NAME);
   return path.join(dir, STATUS_PID_FILE);
+}
+
+export function getSkillbaseDir(cwd: string): string {
+  return path.join(cwd, SKILLBASE_DIR);
+}
+
+export function getSyncJsonPath(cwd: string): string {
+  return path.join(cwd, SKILLBASE_DIR, SYNC_JSON);
 }

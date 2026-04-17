@@ -21,11 +21,15 @@ import {
 import type { SkillsConfig, LoadedSkillSession } from "../types/index.js";
 import { registerProxyTools } from "./proxy-tools.js";
 import { buildPolicyBlock } from "./permissions.js";
+import { registerSyncTools, buildSyncInstructions } from "./sync-tools.js";
+import { findSyncJson } from "../core/sync-json.js";
+import type { SyncJson } from "../types/index.js";
 
 function buildInstructions(
   skillIndex: string,
   personaIndex: string,
   activePersonaInstructions: string,
+  syncInstructions: string,
 ): string {
   const lines = [
     "Skillbase — AI skill manager.",
@@ -55,7 +59,7 @@ function buildInstructions(
     "If no local skill matches, use skill_search with scope='remote' to check remote registries.",
     "If a good remote match is found, suggest it to the user and use skill_install upon approval.",
   ];
-  return lines.join(" ") + skillIndex + personaIndex + activePersonaInstructions;
+  return lines.join(" ") + skillIndex + personaIndex + activePersonaInstructions + syncInstructions;
 }
 
 export async function createServer(): Promise<McpServer> {
@@ -90,6 +94,13 @@ export async function createServer(): Promise<McpServer> {
       buildCharacterInstructions(activePersona);
   }
 
+  // Detect .skillbase/sync.json from cwd for automatic project binding
+  const syncJsonResult = await findSyncJson(process.cwd());
+  const syncJson: SyncJson | null = syncJsonResult?.syncJson ?? null;
+
+  // Build sync instructions (empty string if no connections)
+  const syncInstructions = buildSyncInstructions(config, syncJson);
+
   const server = new McpServer(
     {
       name: "skillbase",
@@ -99,13 +110,13 @@ export async function createServer(): Promise<McpServer> {
       capabilities: {
         tools: {},
       },
-      instructions: buildInstructions(skillIndex, personaIndex, activePersonaInstructions),
+      instructions: buildInstructions(skillIndex, personaIndex, activePersonaInstructions, syncInstructions),
     },
   );
 
   const loadedSkills: LoadedSkillSession[] = [];
 
-  registerTools(server, config, loadedSkills);
+  registerTools(server, config, loadedSkills, syncJson);
 
   return server;
 }
@@ -114,6 +125,7 @@ function registerTools(
   server: McpServer,
   config: SkillsConfig,
   loadedSkills: LoadedSkillSession[],
+  syncJson: SyncJson | null,
 ): void {
   if (config.tools.skill_list) {
     registerSkillList(server);
@@ -145,6 +157,8 @@ function registerTools(
   if (config.tools.skill_exec) {
     registerProxyTools(server, loadedSkills);
   }
+
+  registerSyncTools(server, config, syncJson);
 }
 
 function registerSkillList(server: McpServer): void {

@@ -20,11 +20,12 @@ const NONCE_MAX = 100;
 const TASK_TTL_MS = 300_000; // 5 minutes
 const MAX_CONCURRENT_TASKS = 3;
 const PACKAGE_NAME_RE = /^@[a-z0-9-]+\/[a-z0-9-]+$/;
-const VALID_ACTIONS = new Set(["install", "update", "remove", "publish"]);
+const VALID_ACTIONS = new Set(["install", "update", "remove", "publish", "sync-connect", "sync-project"]);
 
 const CORS_ALLOWLIST = new Set([
   "https://skillbase.space",
   "https://studio.skillbase.space",
+  "https://sync.skillbase.space",
   // Local dev — safe: only code on the same machine can send these origins
   "http://localhost:3000",
   "http://localhost:3001",
@@ -77,6 +78,7 @@ function setCorsHeaders(req: http.IncomingMessage, res: http.ServerResponse): vo
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Access-Control-Allow-Private-Network", "true");
     res.setHeader("Access-Control-Max-Age", "86400");
   }
 }
@@ -157,11 +159,134 @@ async function executeTask(task: ActionTask): Promise<void> {
         filename: task.filename,
       }, onStep);
       task.package = `@${result.name}`;
+    } else if (task.action === "sync-connect") {
+      await executeSyncConnect(task, onStep);
+    } else if (task.action === "sync-project") {
+      await executeSyncProject(task, onStep);
     }
     task.status = "success";
   } catch (err) {
     task.status = "error";
     task.error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+/**
+ * sync-connect: exchange session token for API key, save to config.
+ * Task content is JSON: { api, session_token, company }
+ */
+async function executeSyncConnect(
+  task: ActionTask,
+  onStep: (step: string, label: string) => void,
+): Promise<void> {
+  const payload = JSON.parse(task.content ?? "{}") as {
+    api?: string;
+    session_token?: string;
+    company?: string;
+  };
+
+  if (!payload.api || !payload.session_token || !payload.company) {
+    throw new Error("Missing api, session_token, or company in sync-connect payload");
+  }
+
+  onStep("exchange", "Exchanging session token for API key...");
+
+  // Exchange session token for API key
+  const exchangeRes = await fetch(`${payload.api}/api/v1/auth/keys/exchange`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_token: payload.session_token,
+      company_slug: payload.company,
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!exchangeRes.ok) {
+    const text = await exchangeRes.text().catch(() => "");
+    throw new Error(`Token exchange failed (${exchangeRes.status}): ${text.slice(0, 200)}`);
+  }
+
+  const exchangeData = await exchangeRes.json() as { api_key: string };
+
+  onStep("save", "Saving connection to config...");
+
+  // Save to config
+  const config = await readConfig();
+  if (!config.sync) {
+    config.sync = { connections: [] };
+  }
+
+  // Replace existing connection for this company, or add new
+  const existing = config.sync.connections.findIndex(
+    (c) => c.company === payload.company,
+  );
+  const connection = {
+    company: payload.company!,
+    api: payload.api!,
+    key: exchangeData.api_key,
+    connected_at: new Date().toISOString(),
+  };
+
+  if (existing >= 0) {
+    config.sync.connections[existing] = connection;
+  } else {
+    config.sync.connections.push(connection);
+  }
+
+  config.sync.active_connection = payload.company;
+
+  const { writeConfig } = await import("./config.js");
+  await writeConfig(config);
+}
+
+/**
+ * sync-project: install missing skills/personas from manifest.
+ * Task content is JSON: { skills: [{name, version}], personas: [{name, version}] }
+ */
+async function executeSyncProject(
+  task: ActionTask,
+  onStep: (step: string, label: string) => void,
+): Promise<void> {
+  const payload = JSON.parse(task.content ?? "{}") as {
+    skills?: Array<{ name: string; version: string }>;
+    personas?: Array<{ name: string; version: string }>;
+  };
+
+  const skills = payload.skills ?? [];
+  const personas = payload.personas ?? [];
+  const all = [
+    ...skills.map((s) => ({ ...s, type: "skill" as const })),
+    ...personas.map((p) => ({ ...p, type: "persona" as const })),
+  ];
+
+  if (all.length === 0) {
+    return; // nothing to do
+  }
+
+  // Check what's already installed
+  const installed = await getInstalledMap();
+  const toInstall = all.filter((pkg) => {
+    const map = pkg.type === "persona" ? installed.personas : installed.skills;
+    return !map[pkg.name];
+  });
+
+  if (toInstall.length === 0) {
+    onStep("done", "Everything up to date");
+    return;
+  }
+
+  let completed = 0;
+  for (const pkg of toInstall) {
+    completed++;
+    onStep(
+      `install-${completed}`,
+      `Installing ${pkg.name} (${completed}/${toInstall.length})...`,
+    );
+    await installSkill(
+      pkg.name,
+      pkg.version === "latest" ? undefined : pkg.version,
+    );
   }
 }
 
@@ -227,6 +352,11 @@ export function createStatusServer(): http.Server {
         if (payload.action === "publish") {
           if (!payload.content) {
             jsonResponse(res, 400, { error: "Missing content for publish action." });
+            return;
+          }
+        } else if (payload.action === "sync-connect" || payload.action === "sync-project") {
+          if (!payload.content) {
+            jsonResponse(res, 400, { error: "Missing content for sync action." });
             return;
           }
         } else {
