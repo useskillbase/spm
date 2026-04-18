@@ -15,6 +15,9 @@ const featureVersions = new Map<string, number>();
 /** Cached project knowledge_update_mode per project ID */
 const projectModes = new Map<string, "auto" | "confirm">();
 
+/** Cached project language (BCP-47) per project ID */
+const projectLanguages = new Map<string, string>();
+
 function text(data: unknown): { content: Array<{ type: "text"; text: string }> } {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
@@ -149,14 +152,19 @@ function registerSyncStatus(server: McpServer, config: SkillsConfig): void {
         connected_at: c.connected_at,
       }));
 
-      // Fetch knowledge_update_mode for active project
+      // Fetch knowledge_update_mode + language for active project
       const resolved = resolveClient(config);
       let knowledgeUpdateMode: string | null = null;
+      let language: string | null = null;
       if (resolved?.projectId) {
         try {
           const manifest = await resolved.client.getManifest(resolved.projectId);
           knowledgeUpdateMode = manifest.project.knowledgeUpdateMode;
           projectModes.set(resolved.projectId, manifest.project.knowledgeUpdateMode);
+          if (manifest.project.language) {
+            language = manifest.project.language;
+            projectLanguages.set(resolved.projectId, manifest.project.language);
+          }
         } catch {
           // Connection may be stale — report what we have
         }
@@ -167,6 +175,7 @@ function registerSyncStatus(server: McpServer, config: SkillsConfig): void {
         connections,
         active_project_id: resolved?.projectId ?? null,
         knowledge_update_mode: knowledgeUpdateMode,
+        language,
       };
 
       // If no active project but child projects discovered, show them
@@ -336,11 +345,13 @@ function registerSyncProjectPrompt(server: McpServer, config: SkillsConfig): voi
 
       try {
         const prompt = await resolved.client.getProjectPrompt(pid);
+        if (prompt.language) projectLanguages.set(pid, prompt.language);
 
         if (!prompt.promptContent) {
           return text({
             message: "No project prompt configured yet.",
             version: prompt.promptVersion,
+            language: prompt.language ?? null,
           });
         }
 
@@ -351,6 +362,7 @@ function registerSyncProjectPrompt(server: McpServer, config: SkillsConfig): voi
               text: JSON.stringify({
                 version: prompt.promptVersion,
                 conventions: prompt.conventions,
+                language: prompt.language ?? null,
               }),
             },
             {
@@ -786,8 +798,13 @@ function registerSyncProjectUpdate(server: McpServer, config: SkillsConfig): voi
       prompt_content: z.string().optional().describe("New project prompt content (CLAUDE.md equivalent). Full replacement — send the complete text."),
       conventions: z.record(z.string(), z.unknown()).optional().describe("Project conventions object."),
       knowledge_update_mode: z.enum(["auto", "confirm"]).optional().describe("How agents should handle knowledge updates: auto (push immediately) or confirm (ask user first)."),
+      language: z
+        .string()
+        .regex(/^[a-z]{2,3}(-[A-Z]{2})?$/)
+        .optional()
+        .describe("BCP-47 language code (e.g. 'en', 'ru', 'es', 'pt-BR'). Sets the language agents use to write feature documentation, knowledge, and comments. REQUIRES user confirmation — do not change without explicit request."),
     },
-    async ({ project_id, name, prompt_content, conventions, knowledge_update_mode }) => {
+    async ({ project_id, name, prompt_content, conventions, knowledge_update_mode, language }) => {
       const resolved = resolveClient(config);
       if (!resolved) return error("No Sync connection configured.");
 
@@ -799,6 +816,7 @@ function registerSyncProjectUpdate(server: McpServer, config: SkillsConfig): voi
       if (prompt_content !== undefined) updates.promptContent = prompt_content;
       if (conventions !== undefined) updates.conventions = conventions;
       if (knowledge_update_mode !== undefined) updates.knowledgeUpdateMode = knowledge_update_mode;
+      if (language !== undefined) updates.language = language;
 
       if (Object.keys(updates).length === 0) {
         return error("No updates provided. Pass at least one field to update.");
@@ -1054,8 +1072,8 @@ SYNC PROTOCOL — Skillbase Sync is connected (company: "${active}", available: 
 You have access to team knowledge and project context via Sync. This is your structured memory — it persists across sessions and is shared with teammates and other agents.
 
 SESSION START (do this first):
-1. Call sync_status to confirm connection and identify the active project. If no active project but child projects are discovered, note their project_ids for explicit use.
-2. Call sync_project_prompt to load project-wide context (tech stack, conventions, architecture). This is equivalent to reading CLAUDE.md — do it once per session, reload only if version changed.
+1. Call sync_status to confirm connection, identify the active project, and capture its "language" field. If no active project but child projects are discovered, note their project_ids for explicit use.
+2. Call sync_project_prompt to load project-wide context (tech stack, conventions, architecture, documentation language). This is equivalent to reading CLAUDE.md — do it once per session, reload only if version changed. Lock in the returned "language" as the mandatory language for all Sync writes this session.
 3. If the user's task relates to a specific feature, call sync_feature_load or sync_search immediately to get existing context before starting work.
 4. Call sync_environment to check if all required skills/personas are installed. Suggest installing missing ones.
 
@@ -1073,9 +1091,28 @@ LOADING CONTEXT:
 CREATING & MANAGING FEATURES:
 - Use sync_feature_create to create new features. Always provide a meaningful slug (lowercase, hyphens, 3-63 chars).
 - Feature description = scope and purpose of the feature. What it is, what problem it solves, what's in/out of scope. Keep it as a brief overview (1-3 paragraphs). Specific findings go into knowledge items, not description.
-- Feature lifecycle: draft → active → review → done → archived. Use sync_feature_edit to update status as work progresses.
+- Feature STATUS must always reflect the CURRENT state of the work. Update it live via sync_feature_edit as you progress — do not leave it stale.
+  - "draft" → planned / to do. Scope is captured but work has not started, OR the feature is a stub to fill later.
+  - "active" → in progress. Someone (you, the user, or a teammate) is currently working on this feature. Set this the moment you start executing on it.
+  - "review" → implementation is finished but requires the user's (or a teammate's) review/validation before being considered complete. Use this when you have finished a chunk of work that the user needs to check (e.g. PR opened, changes made locally, acceptance criteria subjective).
+  - "done" → fully completed AND verified: checks pass, user has approved, work is merged/shipped, or all acceptance criteria are objectively met. Do NOT set "done" preemptively — go through "review" first whenever the user's judgment is needed.
+  - "archived" → no longer relevant (cancelled, superseded, out of scope).
+- Transition rules:
+  - On starting execution → move draft/planned feature to "active".
+  - When you believe the work is complete but the user has not yet signed off → set "review" and surface what needs checking.
+  - Only move to "done" after explicit user confirmation OR when automated checks (tests, CI, deployment) objectively prove completion with no remaining ambiguity.
+  - If the user pushes back or asks for more changes after "review", move back to "active".
 - Links: attach relevant URLs (PRs, issues, docs, designs) to features via sync_feature_edit with links array. Format: [{url, title}].
 - Use sync_feature_delete only with user confirmation — it's irreversible.
+
+LANGUAGE (MANDATORY — the project has a configured documentation language):
+- Every project has a "language" field (BCP-47 code). Read it from sync_status or sync_project_prompt and treat it as a hard constraint.
+- ALL content you write into Sync MUST be in that language: feature titles, descriptions, knowledge items (fact/decision/constraint/artifact/open_question), reasons, comments, project prompts, conventions.
+- This applies regardless of which language the user speaks to you in. If the user chats in English but the project language is Russian, you still write Sync content in Russian.
+- Exception: identifiers that are part of code or systems (slugs, file paths, variable names, API fields, package names, URLs) stay as-is — translate the prose around them, not the identifiers.
+- Exception: exact quotes from the codebase, commit messages, or external documents remain in their original language.
+- If the project language is missing (null), default to English and gently ask the user to set one via sync_project_update.
+- Before writing to Sync, double-check: "is this text in {project.language}?" — mixed-language Sync content is a bug.
 
 SAVING KNOWLEDGE (this is the primary value of Sync — be aggressive, not cautious):
 - Save IMMEDIATELY when triggered — do NOT batch, do NOT defer to "end of task", do NOT wait until you're sure. Each sync_feature_update call is atomic and versioned, so there's no downside to saving and refining later. The downside of NOT saving is that the next session loses context — that is the failure mode to avoid.
@@ -1110,7 +1147,7 @@ DOCUMENTING A PROJECT (when asked to analyze/document a codebase):
 2. Update the project prompt via sync_project_update with prompt_content. Include: project purpose, tech stack, key architectural patterns, development conventions, deployment setup. This is what every agent reads on session start.
 3. Create features for each major area/component/initiative. Use descriptive slugs and clear descriptions.
 4. For each feature, add knowledge items: facts about the implementation, decisions that were made (with reasons from git history/code comments), constraints discovered, key artifacts, and open questions.
-5. Set feature status: "done" for documented areas, "active" for work in progress, "draft" for stubs to fill later.
+5. Set feature status per the rules above: "draft" for stubs/planned work, "active" for in-progress areas, "review" when finished but waiting on user validation, "done" only for verified/completed areas.
 
 PROJECT MANAGEMENT:
 - Use sync_project_create to create new projects (requires user confirmation).
@@ -1118,6 +1155,7 @@ PROJECT MANAGEMENT:
   - prompt_content: Project-wide context for all agents. Structure it as: purpose, tech stack, architecture overview, conventions, deployment. This is the equivalent of CLAUDE.md but shared and versioned.
   - conventions: Structured key-value object for machine-readable conventions (naming, formatting, patterns).
   - knowledge_update_mode: "auto" (agents push immediately) or "confirm" (agents ask user first).
+  - language: BCP-47 code for the documentation language (en, ru, es, pt-BR, ...). Only change on explicit user request — this affects how all agents write Sync content.
 
 CHECKING FOR UPDATES:
 - During long sessions, call sync_feature_diff to check if teammates or other agents added context.

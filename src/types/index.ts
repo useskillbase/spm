@@ -455,6 +455,7 @@ export interface SyncProjectListItem {
   slug: string;
   name: string;
   knowledgeUpdateMode: "auto" | "confirm";
+  language?: string;
   createdAt: string;
   updatedAt: string;
   featureCount: number;
@@ -466,6 +467,7 @@ export interface SyncManifest {
     slug: string;
     name: string;
     knowledgeUpdateMode: "auto" | "confirm";
+    language?: string;
   };
   skills: Array<{ skillName: string; skillVersion: string }>;
   personas: Array<{ personaName: string; personaVersion: string }>;
@@ -475,6 +477,7 @@ export interface SyncProjectPrompt {
   promptContent: string | null;
   promptVersion: number;
   conventions: Record<string, unknown>;
+  language?: string;
 }
 
 export interface SyncKnowledgeSummary {

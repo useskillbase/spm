@@ -93,6 +93,7 @@ export class SyncClient {
       promptContent?: string;
       conventions?: Record<string, unknown>;
       knowledgeUpdateMode?: "auto" | "confirm";
+      language?: string;
       links?: unknown[];
     },
   ): Promise<unknown> {
