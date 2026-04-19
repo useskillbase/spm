@@ -157,7 +157,7 @@ Learn more: [Sync documentation](https://skillbase.space/docs/sync)
 
 ## Registry
 
-The registry currently hosts 30+ skills across several domains:
+The registry hosts skills across several domains:
 
 **Development** — `python-backend`, `python-testing`, `db-mongodb`, `arch-code-review`, `arch-api-design`, `arch-system-design`
 
@@ -252,7 +252,7 @@ Skills are free to publish and free to use. The registry is open.
 
 spm works with any client that supports MCP:
 
-Claude Desktop, Claude Code, Cursor, VS Code (GitHub Copilot), Windsurf, Cline, Roo Code, JetBrains IDEs (all), Zed, Emacs, Neovim, and others.
+Claude Desktop, Claude Code, Cursor, VS Code (GitHub Copilot), Windsurf, Cline, Roo Code, JetBrains IDEs (all), Zed, OpenAI Codex, Emacs, Neovim, and others.
 
 ```bash
 # See all supported clients
@@ -290,6 +290,7 @@ We welcome skills, bug reports, feature requests, and documentation improvements
 - [skillbase.space](https://skillbase.space) — spm homepage and registry
 - [Skillbase Sync](https://sync.skillbase.space) — team knowledge sharing and project configuration
 - [Skillbase Studio](https://studio.skillbase.space) — visual editor for creating, testing, and publishing skills
+- [Skillbase Workspace](https://workspace.skillbase.space) — marketplace for ready-made AI agent teams; publish your own and earn revenue share on every deployment
 - [Documentation](https://skillbase.space/docs/getting-started)
 - [npm](https://www.npmjs.com/package/@skillbase/spm)
 

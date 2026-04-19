@@ -1,7 +1,7 @@
 {
   "name": "@skillbase/spm",
   "version": "0.9.4",
-  "description": "AI skills manager — install, publish, and deploy reusable prompts, personas, and MCP tools across 14 AI clients",
+  "description": "AI skills manager — install, publish, and deploy reusable prompts, personas, and MCP tools across 15 AI clients",
   "type": "module",
   "repository": {
     "type": "git",

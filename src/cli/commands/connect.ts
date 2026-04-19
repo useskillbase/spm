@@ -136,28 +136,42 @@ export async function connectCommand(
     exitError(`Unknown client "${client}". Supported: ${supportedClientsList()}`);
   }
 
-  let content = await readRawConfig(def.configPath);
-  const data = parse(content) as Record<string, unknown>;
-
-  if (getNestedValue(data, def.jsonPath)) {
-    log.info(`Already connected to ${def.name}.`);
-    log.message(`Config: ${def.configPath}`);
-    return;
-  }
-
   const svArgs = { execPath: process.execPath, binPath: getSkillsBin() };
-  const serverValue = def.buildServerValue
-    ? def.buildServerValue(svArgs)
-    : { command: svArgs.execPath, args: [svArgs.binPath, "serve"], ...def.extraFields };
 
-  const edits = modify(content, def.jsonPath, serverValue, JSONC_MODIFY_OPTIONS);
-  content = applyEdits(content, edits);
+  if (def.connector) {
+    const { alreadyConnected } = await def.connector.connect(svArgs);
+    if (alreadyConnected) {
+      log.info(`Already connected to ${def.name}.`);
+    } else {
+      log.success(`Connected to ${def.name}.`);
+    }
+    log.message(`Config: ${def.configPath}`);
+    if (!alreadyConnected) {
+      log.info(`Restart ${def.name} to activate.`);
+    }
+  } else {
+    let content = await readRawConfig(def.configPath);
+    const data = parse(content) as Record<string, unknown>;
 
-  await writeRawConfig(def.configPath, content);
+    if (getNestedValue(data, def.jsonPath)) {
+      log.info(`Already connected to ${def.name}.`);
+      log.message(`Config: ${def.configPath}`);
+      return;
+    }
 
-  log.success(`Connected to ${def.name}.`);
-  log.message(`Config: ${def.configPath}`);
-  log.info(`Restart ${def.name} to activate.`);
+    const serverValue = def.buildServerValue
+      ? def.buildServerValue(svArgs)
+      : { command: svArgs.execPath, args: [svArgs.binPath, "serve"], ...def.extraFields };
+
+    const edits = modify(content, def.jsonPath, serverValue, JSONC_MODIFY_OPTIONS);
+    content = applyEdits(content, edits);
+
+    await writeRawConfig(def.configPath, content);
+
+    log.success(`Connected to ${def.name}.`);
+    log.message(`Config: ${def.configPath}`);
+    log.info(`Restart ${def.name} to activate.`);
+  }
 
   // Auto-start status server for website integration
   try {
@@ -217,6 +231,18 @@ export async function disconnectCommand(
 
   if (!def) {
     exitError(`Unknown client "${client}". Supported: ${supportedClientsList()}`);
+  }
+
+  if (def.connector) {
+    const { wasConnected } = await def.connector.disconnect();
+    if (!wasConnected) {
+      log.info(`Not connected to ${def.name}.`);
+      return;
+    }
+    log.success(`Disconnected from ${def.name}.`);
+    log.message(`Config: ${def.configPath}`);
+    log.info(`Restart ${def.name} to apply.`);
+    return;
   }
 
   let content = await readRawConfig(def.configPath);

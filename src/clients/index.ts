@@ -14,10 +14,11 @@ import * as amazonq from "./amazonq.js";
 import * as gemini from "./gemini.js";
 import * as opencode from "./opencode.js";
 import * as openclaw from "./openclaw.js";
+import * as codex from "./codex.js";
 
 const modules = [
   claude, claudeCode, zed, cursor, vscode, windsurf,
-  jetbrains, cline, rooCode, continueExt, amazonq, gemini, opencode, openclaw,
+  jetbrains, cline, rooCode, continueExt, amazonq, gemini, opencode, openclaw, codex,
 ];
 
 const definitions: ClientDefinition[] = modules.map((m) => m.define());
