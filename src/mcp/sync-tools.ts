@@ -1090,7 +1090,18 @@ LOADING CONTEXT:
 
 CREATING & MANAGING FEATURES:
 - Use sync_feature_create to create new features. Always provide a meaningful slug (lowercase, hyphens, 3-63 chars).
-- Feature description = scope and purpose of the feature. What it is, what problem it solves, what's in/out of scope. Keep it as a brief overview (1-3 paragraphs). Specific findings go into knowledge items, not description.
+- Feature description = scope and purpose. What the feature is, what problem it solves, what's in/out of scope. Treat it as the README a new reader sees first.
+- AUTHORING DISCIPLINE for description (critical — you are usually the author, so follow these rules strictly):
+  - Structure: short preamble (1-3 paragraphs of prose stating the goal) + clearly separated sections under descriptive '##' headings. Sections should be self-contained — a reader should understand a section without cross-referencing others. Avoid "see Section 3" style internal links.
+  - Use DESCRIPTIVE headings: "## Порядок работ", "## Backend API", "## UX поток", "## Ограничения". Not generic: "## Детали", "## Примечания", "## Разное". A reader must be able to infer section content from the heading alone.
+  - DO NOT put structured decisions, constraints, or open questions inline in description. They go as knowledge items:
+    - architectural choice with rationale → decision (with reason)
+    - hard limit or external constraint → constraint
+    - unresolved item → open_question
+    - key file/config → artifact
+    - verified behavior → fact
+  - If a description section starts listing "Decisions:" or "Constraints:" or "TODO:" — stop and convert those to knowledge items instead. Keep description narrative, keep structured data structured.
+  - Length: no hard cap, but if a description exceeds ~3K characters without distinct sections, it's a sign structure is missing or that some content belongs in knowledge items or artifacts.
 - Feature STATUS must always reflect the CURRENT state of the work. Update it live via sync_feature_edit as you progress — do not leave it stale.
   - "draft" → planned / to do. Scope is captured but work has not started, OR the feature is a stub to fill later.
   - "active" → in progress. Someone (you, the user, or a teammate) is currently working on this feature. Set this the moment you start executing on it.

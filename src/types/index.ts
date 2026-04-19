@@ -496,7 +496,7 @@ export interface SyncFeatureMap {
     status: string;
     version: number;
     updatedAt: string;
-    descriptionPreview: string | null;
+    description: string | null;
     links: unknown[];
   };
   knowledgeSummary: SyncKnowledgeSummary;
@@ -571,7 +571,7 @@ export interface SyncFeatureListItem {
   status: string;
   version: number;
   updatedAt: string;
-  descriptionPreview: string | null;
+  description: string | null;
 }
 
 export interface SyncSearchResult {
@@ -580,7 +580,7 @@ export interface SyncSearchResult {
     slug: string;
     title: string;
     status: string;
-    description_preview: string | null;
+    description: string | null;
     rank: number;
   }>;
   knowledgeItems: Array<{

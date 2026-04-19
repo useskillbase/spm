@@ -386,6 +386,7 @@ export interface SyncProjectListItem {
     slug: string;
     name: string;
     knowledgeUpdateMode: "auto" | "confirm";
+    language?: string;
     createdAt: string;
     updatedAt: string;
     featureCount: number;
@@ -396,6 +397,7 @@ export interface SyncManifest {
         slug: string;
         name: string;
         knowledgeUpdateMode: "auto" | "confirm";
+        language?: string;
     };
     skills: Array<{
         skillName: string;
@@ -410,6 +412,7 @@ export interface SyncProjectPrompt {
     promptContent: string | null;
     promptVersion: number;
     conventions: Record<string, unknown>;
+    language?: string;
 }
 export interface SyncKnowledgeSummary {
     [type: string]: {
@@ -426,7 +429,7 @@ export interface SyncFeatureMap {
         status: string;
         version: number;
         updatedAt: string;
-        descriptionPreview: string | null;
+        description: string | null;
         links: unknown[];
     };
     knowledgeSummary: SyncKnowledgeSummary;
@@ -497,7 +500,7 @@ export interface SyncFeatureListItem {
     status: string;
     version: number;
     updatedAt: string;
-    descriptionPreview: string | null;
+    description: string | null;
 }
 export interface SyncSearchResult {
     features: Array<{
@@ -505,7 +508,7 @@ export interface SyncSearchResult {
         slug: string;
         title: string;
         status: string;
-        description_preview: string | null;
+        description: string | null;
         rank: number;
     }>;
     knowledgeItems: Array<{
