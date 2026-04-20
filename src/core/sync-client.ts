@@ -13,6 +13,8 @@ import type {
   SyncJson,
   SkillsConfig,
   SyncCommentList,
+  SyncFeatureLink,
+  SyncKnowledgeLink,
 } from "../types/index.js";
 
 export class SyncClient {
@@ -102,8 +104,15 @@ export class SyncClient {
 
   // -- Features --
 
-  async getFeatureMap(featureId: string): Promise<SyncFeatureMap> {
-    return this.request("GET", `/features/${featureId}/map`);
+  async getFeatureMap(
+    featureId: string,
+    opts: { includeGraph?: boolean; depth?: 1 | 2 } = {},
+  ): Promise<SyncFeatureMap> {
+    const qs = new URLSearchParams();
+    if (opts.includeGraph === false) qs.set("include_graph", "false");
+    if (opts.depth === 2) qs.set("depth", "2");
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return this.request("GET", `/features/${featureId}/map${suffix}`);
   }
 
   async getFeatureKnowledge(
@@ -197,6 +206,34 @@ export class SyncClient {
 
   async deleteFeature(featureId: string): Promise<{ deleted: boolean }> {
     return this.request("DELETE", `/features/${featureId}`);
+  }
+
+  // -- Feature & Knowledge Links --
+
+  async createFeatureLink(data: {
+    source_id: string;
+    target_id: string;
+    type: string;
+    reason: string;
+  }): Promise<{ link: SyncFeatureLink }> {
+    return this.request("POST", `/feature-links`, data);
+  }
+
+  async deleteFeatureLink(linkId: string): Promise<{ deleted: boolean }> {
+    return this.request("DELETE", `/feature-links/${linkId}`);
+  }
+
+  async createKnowledgeLink(data: {
+    source_item_id: string;
+    target_item_id: string;
+    type: string;
+    reason: string;
+  }): Promise<{ link: SyncKnowledgeLink }> {
+    return this.request("POST", `/knowledge-links`, data);
+  }
+
+  async deleteKnowledgeLink(linkId: string): Promise<{ deleted: boolean }> {
+    return this.request("DELETE", `/knowledge-links/${linkId}`);
   }
 
   // -- Search --

@@ -253,6 +253,8 @@ export interface ToolsConfig {
     sync_feature_delete: boolean;
     sync_feature_diff: boolean;
     sync_feature_comments: boolean;
+    sync_feature_link: boolean;
+    sync_knowledge_link: boolean;
     sync_search: boolean;
 }
 export interface SearchConfig {
@@ -434,6 +436,43 @@ export interface SyncFeatureMap {
     };
     knowledgeSummary: SyncKnowledgeSummary;
     projectPromptVersion: number;
+    neighbors?: SyncFeatureNeighbor[];
+    incoming_warnings?: SyncIncomingWarning[];
+}
+export interface SyncFeatureNeighbor {
+    id: string;
+    slug: string;
+    title: string;
+    project_slug: string;
+    relationship: string;
+    direction: "outgoing" | "incoming";
+    reason: string;
+    hop: number;
+}
+export interface SyncIncomingWarning {
+    relationship: string;
+    by_feature_id: string;
+    by_feature_title: string;
+    reason: string;
+    warning: string;
+}
+export interface SyncFeatureLink {
+    id: string;
+    sourceFeatureId: string;
+    targetFeatureId: string;
+    type: string;
+    reason: string;
+    createdBy: string;
+    createdAt: string;
+}
+export interface SyncKnowledgeLink {
+    id: string;
+    sourceItemId: string;
+    targetItemId: string;
+    type: string;
+    reason: string;
+    createdBy: string;
+    createdAt: string;
 }
 export interface SyncKnowledgeItem {
     id: string;

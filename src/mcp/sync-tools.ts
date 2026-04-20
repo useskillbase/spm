@@ -123,6 +123,12 @@ export function registerSyncTools(
   if (config.tools.sync_feature_comments) {
     registerSyncFeatureComments(server, config);
   }
+  if (config.tools.sync_feature_link) {
+    registerSyncFeatureLink(server, config);
+  }
+  if (config.tools.sync_knowledge_link) {
+    registerSyncKnowledgeLink(server, config);
+  }
   if (config.tools.sync_search) {
     registerSyncSearch(server, config);
   }
@@ -387,7 +393,7 @@ function registerSyncProjectPrompt(server: McpServer, config: SkillsConfig): voi
 function registerSyncFeatureLoad(server: McpServer, config: SkillsConfig): void {
   server.tool(
     "sync_feature_load",
-    "Load feature context. First call returns a lightweight map (title, status, knowledge summary, version). Use the sections parameter to selectively load full knowledge items. Typical first load: sections=[\"decision\",\"constraint\",\"open_question\"]. Load \"fact\" and \"artifact\" sections on demand. If no feature_id is provided, pass a query to search by name/slug.",
+    "Load feature context. First call returns a lightweight map (title, status, knowledge summary, version) plus graph neighbors and incoming_warnings at depth=1 by default — use these to discover related features without extra calls. Use the sections parameter to selectively load full knowledge items. Typical first load: sections=[\"decision\",\"constraint\",\"open_question\"]. Load \"fact\" and \"artifact\" sections on demand. If no feature_id is provided, pass a query to search by name/slug.",
     {
       feature_id: z
         .string()
@@ -477,6 +483,8 @@ function registerSyncFeatureLoad(server: McpServer, config: SkillsConfig): void 
           feature: map.feature,
           knowledgeSummary: map.knowledgeSummary,
           projectPromptVersion: map.projectPromptVersion,
+          neighbors: map.neighbors,
+          incoming_warnings: map.incoming_warnings,
           knowledge: knowledge.items,
         });
       } catch (err) {
@@ -991,6 +999,119 @@ function registerSyncFeatureDelete(server: McpServer, config: SkillsConfig): voi
         return text(result);
       } catch (err) {
         return error(`Failed to delete feature: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// sync_feature_link
+// ---------------------------------------------------------------------------
+
+const LINK_TYPE_ENUM = [
+  "depends_on",
+  "blocks",
+  "supersedes",
+  "references",
+  "shares_constraint",
+  "split_from",
+] as const;
+
+function registerSyncFeatureLink(server: McpServer, config: SkillsConfig): void {
+  server.tool(
+    "sync_feature_link",
+    "Create a typed edge between two features (cross-project within the same company). Use this to record depends_on/blocks/supersedes/references/shares_constraint/split_from relationships. Does NOT bump feature.version — links are metadata, not content. Both features must belong to the same company. Pass a human-readable reason so the link is understandable without extra context.",
+    {
+      source_id: z.string().describe("Source feature UUID (the 'from' end of the edge)."),
+      target_id: z.string().describe("Target feature UUID (the 'to' end of the edge)."),
+      type: z.enum(LINK_TYPE_ENUM).describe("Edge type: depends_on | blocks | supersedes | references | shares_constraint | split_from."),
+      reason: z.string().describe("Why this link exists — surfaced in the graph so others see the rationale."),
+    },
+    async ({ source_id, target_id, type, reason }) => {
+      const resolved = resolveClient(config);
+      if (!resolved) return error("No Sync connection configured.");
+
+      try {
+        const result = await resolved.client.createFeatureLink({
+          source_id,
+          target_id,
+          type,
+          reason,
+        });
+        return text(result);
+      } catch (err) {
+        return error(`Failed to create feature link: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  server.tool(
+    "sync_feature_unlink",
+    "Remove a feature link by its ID.",
+    {
+      link_id: z.string().describe("Feature link UUID to delete."),
+    },
+    async ({ link_id }) => {
+      const resolved = resolveClient(config);
+      if (!resolved) return error("No Sync connection configured.");
+
+      try {
+        const result = await resolved.client.deleteFeatureLink(link_id);
+        return text(result);
+      } catch (err) {
+        return error(`Failed to delete feature link: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// sync_knowledge_link
+// ---------------------------------------------------------------------------
+
+function registerSyncKnowledgeLink(server: McpServer, config: SkillsConfig): void {
+  server.tool(
+    "sync_knowledge_link",
+    "Create a typed edge between two knowledge items that live in DIFFERENT features (same-feature links are forbidden — items inside one feature load together anyway). Use for item-level reasoning: 'decision A in feature X supersedes decision B in feature Y'. Same edge vocabulary as sync_feature_link.",
+    {
+      source_item_id: z.string().describe("Source knowledge item UUID."),
+      target_item_id: z.string().describe("Target knowledge item UUID (must live in a different feature)."),
+      type: z.enum(LINK_TYPE_ENUM).describe("Edge type: depends_on | blocks | supersedes | references | shares_constraint | split_from."),
+      reason: z.string().describe("Why this link exists."),
+    },
+    async ({ source_item_id, target_item_id, type, reason }) => {
+      const resolved = resolveClient(config);
+      if (!resolved) return error("No Sync connection configured.");
+
+      try {
+        const result = await resolved.client.createKnowledgeLink({
+          source_item_id,
+          target_item_id,
+          type,
+          reason,
+        });
+        return text(result);
+      } catch (err) {
+        return error(`Failed to create knowledge link: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  );
+
+  server.tool(
+    "sync_knowledge_unlink",
+    "Remove a knowledge link by its ID.",
+    {
+      link_id: z.string().describe("Knowledge link UUID to delete."),
+    },
+    async ({ link_id }) => {
+      const resolved = resolveClient(config);
+      if (!resolved) return error("No Sync connection configured.");
+
+      try {
+        const result = await resolved.client.deleteKnowledgeLink(link_id);
+        return text(result);
+      } catch (err) {
+        return error(`Failed to delete knowledge link: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
   );
