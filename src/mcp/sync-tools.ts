@@ -1274,6 +1274,21 @@ COMMENTS (human-to-human discussion, pull-only — NOT auto-loaded):
 - Call sync_feature_comments ONLY when the user explicitly references a comment or asks you to read discussion. Examples: "check the comment I left on the auth question", "read what the team wrote about this", "look at the review thread". Without such a cue, skip comments — they are not part of your default working context.
 - When calling sync_feature_comments, prefer 'since' to fetch only new comments (pass the ISO timestamp from your last check). Pass with_targets=true so you see what each comment is attached to without a second round-trip.
 
+TARGET VERIFICATION (mistargeting is silent and happens routinely — features and prompts have been written to the wrong project multiple times):
+- Before ANY sync write (sync_feature_create, sync_feature_update, sync_feature_edit, sync_feature_link, sync_knowledge_link, sync_project_update, sync_install), you MUST be certain which project/feature you are writing to. The server does not warn about mismatches.
+- Operations that accept project_id implicitly (defaults to active project): sync_feature_create, sync_project_update, sync_install. Before calling any of these: call sync_status to confirm the active project slug matches your intent. A .skillbase/sync.json binding can point to a sibling project (e.g. sync-app vs sync) without any surface signal.
+- When the user names a project ("update sync", "add a feature in infrastructure"): look it up via sync_project_list and pass project_id EXPLICITLY — do not assume the active project is the one the user named.
+- Operations on a specific feature (sync_feature_update, sync_feature_edit, sync_feature_link, sync_knowledge_link) take feature_id — also confirm that feature_id refers to the feature you think it does (check slug in your last sync_feature_load response).
+- Verification is one tool call. Mistargeting is data in the wrong place that often goes unnoticed for days.
+
+FEATURE GRAPH DISCIPLINE (mandatory — regressions here are silent and costly):
+- The explicit feature graph is the primary discovery mechanism. It only exists if you maintain it — there is no auto-extraction, parser, or semantic layer. Treat link creation as a reflex, not an afterthought.
+- On every sync_feature_load, inspect incoming_warnings. If any entry has type=supersedes or type=blocks, you MUST load the superseding/blocking feature BEFORE continuing. Do not work on content that has been replaced or gated.
+- When writing any knowledge item (decision/constraint/open_question) that mentions another feature or references its work: IMMEDIATELY call sync_feature_link in the same logical step as the sync_feature_update. Default type=references; use depends_on/blocks/shares_constraint when semantics are stronger. Mentions in prose without a link are invisible to the graph — they will not be found later.
+- When archiving a replaced feature: create the replacement, call sync_feature_link type=supersedes from new→old, then set the old feature's status=archived via sync_feature_edit. Do NOT delete the old feature — incoming_warnings on downstream features depends on it remaining.
+- When resolving an open_question using another feature's knowledge: mark resolved=true via sync_feature_update AND call sync_knowledge_link (type=references) to the source item. Preserves traceability.
+- After sync_feature_create, seed at least 2-3 knowledge items in the same logical step — a description-only feature is incomplete. Capture the key decisions, constraints, and open questions that motivated creating it.
+
 DOCUMENTING A PROJECT (when asked to analyze/document a codebase):
 1. Read and understand the codebase structure, tech stack, architecture.
 2. Update the project prompt via sync_project_update with prompt_content. Include: project purpose, tech stack, key architectural patterns, development conventions, deployment setup. This is what every agent reads on session start.
